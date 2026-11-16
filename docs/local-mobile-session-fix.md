@@ -5,7 +5,7 @@
 | 用途 | 地址 |
 |---|---|
 | backend | `http://10.126.126.10:8085` |
-| 手机 APK | `http://10.126.126.10:8088/harness.apk`（1.0.16+91） |
+| 手机 APK | `http://10.126.126.10:8088/harness.apk`（1.0.17+92，sha256 `15dbe6766cb2d7b11d245f9ef76ad8293e2563de935a22ab882a9dbdeb204b51`） |
 | 本地配对页（二维码） | `http://10.126.126.10:8089/pair` |
 | 本地 web | `http://10.126.126.10:8091` |
 
@@ -207,3 +207,33 @@ curl -s http://10.126.126.10:8089/code  # 当前配对链接
 
 - 既有的 3 + 2 个失败测试是**上游断言 skeleton**、而本地部署已改成显示 conversation view
   造成的，不是这次改动引入的；要清干净需要同步更新上游那几条断言。
+
+---
+
+# 代码去向：fork 分支（2026-11-16 深夜）
+
+`git@github.com:oliveagle/openharness.git` 这个 fork 上有一条分支：
+
+- **`feature/lan-local-stack`** —— 上面这一整套本地部署 + 手机端对话层的工作。
+  基线是 upstream 当时的 `main`（`1ee076c5`），5 个提交：
+
+  | 提交 | 内容 |
+  |---|---|
+  | `feat(cli)` | Herdr 终端后端复活 + `agentRail`（workspace / agent 两层分组） |
+  | `feat(backend)` | agents_list 带 `sessionId`；中继 `sessions_list` / `session_get`；`LOG_WEB_FRAMES` |
+  | `feat(mobile)` | 对话视图 + 标题常驻 + 本地部署编译开关 |
+  | `feat(deploy)` | 局域网全套（pair QR / 本地 web / 假手机）+ desktop/tui 的 pair origin |
+  | `docs` | 本文件 |
+
+fork 的 `main` **没有被动过**。
+
+### 坑
+
+- 全局 git 配置里有 `url.https://github.com/.insteadof git@github.com:`，会把 `git@` 形式改写成
+  https，而本机到 github 的 https 不通 → **用 `ssh://git@github.com/<owner>/<repo>.git` 形式**
+  （不匹配任何 rewrite，可用）。本 clone 的 `origin` 已改成这个形式。
+- 本地是**浅克隆**（`.git/shallow` 有 2 个 graft 点），`git merge-base` 会返回空，看起来像
+  「历史不相干」。`git fetch --depth=100 origin main:refs/remotes/origin/main` 之后要**再 fetch
+  一次** ref 才动（第一次只进了 FETCH_HEAD）。
+- 上游 main 会往前走，rebase 之后 `git diff <旧系列> HEAD` 会把 upstream 的几千行也算进去，
+  别当成「我们的改动变多了」。
