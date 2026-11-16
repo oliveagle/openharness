@@ -49,6 +49,12 @@ deployment rather than a wrong binary. The script compiles the three `--dart-def
 package a `.local` id suffix so it sits beside the store app instead of fighting it for one slot,
 and then checks the API origin is really inside `libapp.so` before it publishes anything.
 
+The tell that the phone is running *this* build, when a conversation will not load: launch it and the
+camera opens by itself, the entry in its settings is **Pair a computer**, and the icon is **Harness
+Local**. Google/Apple sign-in, "Sign in a computer", or a page that says `autonomous.ai/go` is the
+store app talking to the cloud — it can neither read our QR nor see this machine, and its chat stays
+empty however healthy the LAN stack is. Both can sit on the phone at once, so the icon matters.
+
 ## Proving it works, without a phone
 
 `cli/scripts/fake-phone-qr-e2e.mjs` is the phone: same relay, same sealed frames. With no arguments

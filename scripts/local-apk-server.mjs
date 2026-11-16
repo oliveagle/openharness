@@ -62,6 +62,10 @@ function page() {
     ['sha256', d.sha256],
     ['api', d.api],
     ['pair qr', `http://${d.pairHost}:8089/pair`],
+    // The tell, on the page that hands out the file: the phone running the store app asks for a
+    // Google or Apple account and its camera reads our QR as nothing, which reads as a broken
+    // deployment. Named here so whoever installs can rule it out in one look.
+    ['this build', `icon "${d.label}", package ${d.package}; one that offers Google or Apple sign-in is the store app`],
   ];
   if (d.stale) rows.push(['⚠ stale', 'this file is not the build in app-release-info.json — rebuild with scripts/build-local-apk.sh']);
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
