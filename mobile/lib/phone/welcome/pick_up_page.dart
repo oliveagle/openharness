@@ -142,6 +142,11 @@ class _PickUpPageState extends State<PickUpPage> {
                   key: _results,
                   notifier: widget.notifier,
                   controller: _search,
+                  // ⚠️ **The one list that groups by computer** (owner, 2026-11-16): every session
+                  // on every machine, read as "which machine was that on" — with a chip per
+                  // machine to switch to it. Find draws the same rows flat under a query, where a
+                  // heading would fight the ranking.
+                  groupByMachine: true,
                   onNewHarness: _newHarness,
                 ),
               ),

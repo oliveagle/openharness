@@ -33,14 +33,20 @@ class PhoneMachineGroup {
 List<PhoneMachineGroup> phoneMachineGroups(List<PhoneDestination> rows) {
   final groups = <String, List<PhoneDestination>>{};
   for (final row in rows) {
-    if (!row.isAgent || row.entry == null) continue;
-    (groups[row.machineId!] ??= []).add(row);
+    // A harness, or a conversation Harness did not start: both ran on a machine, and the pick-up
+    // screen groups the two together — it lists both. A machine, a project or a command did not.
+    if (!row.isAgent && row.external == null) continue;
+    final machineId = row.machineId;
+    if (machineId == null) continue;
+    (groups[machineId] ??= []).add(row);
   }
   return [
     for (final MapEntry(key: machineId, value: members) in groups.entries)
       PhoneMachineGroup(
         machineId: machineId,
-        machineName: members.first.entry!.machineName,
+        // The entry's own name where there is one; a conversation found by what was said keeps the
+        // machine's name on its row instead.
+        machineName: _nameOf(members.first, machineId),
         rows: members,
       ),
   ];
@@ -51,6 +57,11 @@ List<PhoneMachineGroup> phoneMachineGroups(List<PhoneDestination> rows) {
 ///
 /// The pager walks this BY INDEX against what is on screen, so it has to be
 /// built from the groups rather than from the ungrouped rows they were made of.
+String _nameOf(PhoneDestination row, String machineId) {
+  final name = (row.entry?.machineName ?? row.machineLabel).trim();
+  return name.isEmpty ? machineId : name;
+}
+
 List<PhoneDestination> phoneMachineGroupedRows(
   List<PhoneMachineGroup> groups,
 ) => [for (final group in groups) ...group.rows];

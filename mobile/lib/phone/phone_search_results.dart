@@ -22,12 +22,14 @@ import 'phone_navigation.dart';
 import 'phone_search_catalog.dart' show phoneAgentId;
 import 'phone_search_commands.dart';
 import 'phone_search_controller.dart';
+import 'phone_search_groups.dart';
 import 'phone_search_rank.dart';
 import 'phone_sheet.dart';
 import 'phone_status.dart';
 import 'resume_agent.dart';
 import 'search_result_text.dart'
     show phoneResultMatches, snippetLead, snippetRuns;
+import 'status_pill.dart';
 import 'tty.dart';
 import 'tty_controls.dart';
 
@@ -59,11 +61,21 @@ class PhoneSearchResults extends StatefulWidget {
     this.onNewHarness,
     this.onNewTab,
     this.opening,
+    this.groupByMachine = false,
   });
 
   /// The sheet this list slides up in, while it does: the machines are reached once it is up
   /// rather than during the slide. Null — a page of its own — reaches after the first frame.
   final Animation<double>? opening;
+
+  /// Group the list under a heading per computer, and narrow it with a chip per computer — the
+  /// first screen after pairing (`welcome/pick_up_page.dart`), where the question is "which of my
+  /// machines was that on" rather than "what does this query match".
+  ///
+  /// ⚠️ **False for Find.** There the list is one flat ranking under a query, and a machine
+  /// heading fought it — the note at the top of this file. That is also why the grouping here is
+  /// only ever drawn for the plain, untyped list.
+  final bool groupByMachine;
 
   /// Find's `+ New Harness` row — with a project's machine and folder when the query matched one
   /// (`+ New Harness in api`). Null leaves the row out.
@@ -99,7 +111,7 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
   void openFirst() {
     final search = widget.controller;
     final showing = widget.showing;
-    final shown = _narrowed(search.rows, _tab(_tabs(search)));
+    final shown = _listed(search.rows, _tab(_tabs(search)));
     final rows = search.matchQuery.trim().isEmpty && showing != null
         ? [
             for (final row in shown)
@@ -132,12 +144,24 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
   /// on screen names.
   String? _tabId;
 
+  /// The computer the list is narrowed to; null is All. Only ever a choice, like [_tabId]: a machine
+  /// that stops answering takes its harnesses off the list, and its chip with them, so the pick
+  /// falls back to All rather than to a filter nothing on screen names ([_machine]).
+  String? _machineId;
+
   /// The order Find opened with — each row's section (needs you, recent, the one on screen,
   /// paused) and place in it, by id. Held while Find is open: a harness that starts or stops
   /// asking, pauses, or does something new keeps its place and only its words change, so the row
   /// under your finger is the row you meant. Rows that arrive later — a machine answering —
   /// join the end of their section. Null until the first rows are drawn.
   Map<String, (int, int)>? _openedOrder;
+
+  /// The session rows as drawn, in the order drawn — what a pager opened from one of them swipes
+  /// along. ⚠️ Held because grouping draws rows in an order the ranking did not produce (a group's
+  /// second row is drawn before the next machine's first one): the pager walks the screen, by index,
+  /// and a list built from the ungrouped rows would send the next swipe to a different harness than
+  /// the one beside it.
+  List<PhoneDestination>? _drawn;
 
   /// ⚠️ **Three sources, and they answer different questions.**
   ///
@@ -233,9 +257,24 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
       final all = search.rows;
       final tabs = _tabs(search);
       final tab = _tab(tabs);
+      // The tab first, then the computer: the chips count what they would list for the tab as it
+      // stands, the same rule the tab chips' own counts follow.
+      final inTab = _narrowed(all, tab);
+      final machines = _machineChoices(inTab);
+      final machine = _machine(machines);
+      final rows = _machineNarrowed(inTab, machine?.id);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Which computer, over which tab — the outer of the two in the pick-up screen's order
+          // of questions. Drawn only where the grouping is: one machine's list needs no chip rail.
+          if (machines.isNotEmpty)
+            DeskTabFilterBar(
+              key: const ValueKey('computer-chips'),
+              choices: machines,
+              selected: machine?.id,
+              onSelected: (id) => setState(() => _machineId = id),
+            ),
           // Under the field, and only over the plain list of harnesses: a mode lists commands,
           // models or places, none of which is on a tab.
           if (tabs.isNotEmpty)
@@ -260,12 +299,7 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
             ),
           Expanded(
             child: _rowsDue
-                ? _find(
-                    search,
-                    _narrowed(all, tab),
-                    tab: tab,
-                    everywhere: _sessions(all),
-                  )
+                ? _find(search, rows, tab: tab, machine: machine, everywhere: _sessions(all))
                 : const SizedBox.shrink(),
           ),
         ],
@@ -331,6 +365,62 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
   DeskTabFilter? _tab(List<DeskTabFilter> tabs) =>
       tabs.where((tab) => tab.id == _tabId).firstOrNull;
 
+  /// The computers the chip rail offers: All, then one chip per machine holding a session, in the
+  /// order their first row arrives — the order the grouping draws them in.
+  ///
+  /// ⚠️ **Nothing off the grouped screen, and nothing for a single computer.** These chips narrow
+  /// the same list the tab chips do, so they are drawn above them rather than instead of them; on a
+  /// phone with one machine answering, "All" and its one chip would list the same rows and a rail
+  /// of them is chrome over the rows the person came for.
+  List<DeskTabFilterChoice> _machineChoices(List<PhoneDestination> rows) {
+    if (!widget.groupByMachine) return const [];
+    final counts = <String, int>{};
+    final names = <String, String>{};
+    for (final row in rows) {
+      final machineId = row.machineId;
+      // Sessions only: a machine, a project or a command is not something that ran on one.
+      if (machineId == null) continue;
+      if (!row.isAgent && row.external == null) continue;
+      counts[machineId] = (counts[machineId] ?? 0) + 1;
+      final name = (row.entry?.machineName ?? row.machineLabel).trim();
+      names.putIfAbsent(machineId, () => name.isEmpty ? machineId : name);
+    }
+    if (counts.length < 2) return const [];
+    return [
+      // ⚠️ Not "All": the tab rail one line down has a chip by that name, and two chips reading
+      // "All" over the same list say nothing about which axis each one clears.
+      DeskTabFilterChoice(
+        id: null,
+        name: 'All computers',
+        count: counts.values.fold(0, (sum, count) => sum + count),
+      ),
+      for (final MapEntry(key: machineId, value: count) in counts.entries)
+        DeskTabFilterChoice(id: machineId, name: names[machineId]!, count: count),
+    ];
+  }
+
+  /// The picked computer among [machines]; null is All.
+  DeskTabFilterChoice? _machine(List<DeskTabFilterChoice> machines) =>
+      machines.where((each) => each.id == _machineId).firstOrNull;
+
+  /// [rows] narrowed to [machineId] — every row that ran there, harnesses and the conversations
+  /// Harness did not start alike. Null leaves them all.
+  static List<PhoneDestination> _machineNarrowed(
+    List<PhoneDestination> rows,
+    String? machineId,
+  ) => machineId == null
+      ? rows
+      : [
+          for (final row in rows)
+            if (row.machineId == machineId) row,
+        ];
+
+  /// The plain list as the chips leave it: the tab picked, then the computer picked.
+  List<PhoneDestination> _listed(List<PhoneDestination> rows, DeskTabFilter? tab) {
+    final inTab = _narrowed(rows, tab);
+    return _machineNarrowed(inTab, _machine(_machineChoices(inTab))?.id);
+  }
+
   static bool _inTab(DeskTabFilter tab, PhoneDestination row) {
     final entry = row.entry;
     return entry != null && tab.holds(entry);
@@ -361,6 +451,7 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
     PhoneSearchController search,
     List<PhoneDestination> rows, {
     required DeskTabFilter? tab,
+    required DeskTabFilterChoice? machine,
     required int everywhere,
   }) {
     // The words, less any time ("dial last week" lights "dial").
@@ -436,6 +527,42 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
       }
     }
     final ordered = [...needsYou, ...rest, ?current, ...pausedRows];
+    // ⚠️ **The pick-up screen groups; Find does not** (owner, 2026-11-16: "所有 session 都混在一个
+    // 列表里边……用机器分组"). Under a query a heading fought the ranking it sat on (the note at the
+    // top of this file); on the screen read as "which computer was that on", with nothing typed, a
+    // machine heading is what the eye needs — the call `AgentsListPage` already makes.
+    //
+    // `needs you` keeps its own place above them: it is the one question a machine heading would
+    // bury, and it is asked across machines.
+    //
+    // ⚠️ One group draws no heading: the chip that narrowed the list already names the computer.
+    final sectioned = [...rest, ?current, ...pausedRows];
+    final groups = widget.groupByMachine && !typed
+        ? phoneMachineGroups(sectioned)
+        : const <PhoneMachineGroup>[];
+    final grouped = groups.length > 1;
+    // ⚠️ **One row in, one row out.** Anything the grouping does not cover — a machine, a project
+    // or a command row, none of which ran on a computer — is drawn after the last group rather than
+    // dropped: a list one row shorter than the one the ranking produced is how a harness goes
+    // missing.
+    final covered = {
+      for (final group in groups)
+        for (final row in group.rows) row.id,
+    };
+    final leftover = grouped
+        ? [
+            for (final row in sectioned)
+              if (!covered.contains(row.id)) row,
+          ]
+        : const <PhoneDestination>[];
+    final drawn = grouped
+        ? <PhoneDestination>[
+            ...needsYou,
+            for (final group in groups) ...group.rows,
+            ...leftover,
+          ]
+        : ordered;
+    _drawn = drawn;
     final selectedAt = typed ? ordered.indexWhere(search.canSubmit) : -1;
     final newHarness = widget.onNewHarness;
     final project = search.projectMatch;
@@ -456,31 +583,54 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
     if (needsYou.isNotEmpty) {
       items.add(() => FindHeader('needs you', color: tty.yellow));
       needsYou.forEach(row);
-      items.add(() => const FindHeader('recent'));
+      // Under a machine heading there is no `recent` to head: the heading is the section.
+      if (!grouped) items.add(() => const FindHeader('recent'));
     }
-    rest.forEach(row);
-    if (current != null) row(current);
-    // At the end and without a heading: each one's own word on the right says `paused`.
-    pausedRows.forEach(row);
+    if (grouped) {
+      for (final group in groups) {
+        items.add(() => _machineHeader(group, tty));
+        group.rows.forEach(row);
+      }
+      leftover.forEach(row);
+    } else {
+      rest.forEach(row);
+      if (current != null) row(current);
+      // At the end and without a heading: each one's own word on the right says `paused`.
+      pausedRows.forEach(row);
+    }
     if (ordered.isEmpty) {
       items.add(
         () => Padding(
           padding: const EdgeInsets.fromLTRB(Tty.origin, 20, Tty.origin, 8),
           child: TtyText(
-            switch (tab) {
-              null =>
+            switch ((tab, machine)) {
+              (null, null) =>
                 search.total == 0 && !typed
                     ? 'No harnesses running.'
                     : 'No match.',
-              _ when typed => 'No match in ${tab.name}.',
-              _ when tab.isEmpty => 'No harnesses in ${tab.name} yet.',
-              _ => 'Nothing in ${tab.name} can be reached right now.',
+              (final tab?, _) when typed => 'No match in ${tab.name}.',
+              (final tab?, _) when tab.isEmpty =>
+                'No harnesses in ${tab.name} yet.',
+              (final tab?, _) =>
+                'Nothing in ${tab.name} can be reached right now.',
+              (null, final machine?) =>
+                'Nothing on ${machine.name} can be reached right now.',
             },
             color: tty.faint,
             size: TtySize.row,
           ),
         ),
       );
+      // The way out of an empty computer, on the same rule: the chip that chose it may be scrolled
+      // out of the rail.
+      if (machine != null) {
+        items.add(
+          () => FindRow(
+            title: 'Show all computers',
+            onTap: () => setState(() => _machineId = null),
+          ),
+        );
+      }
       // The way out of an empty tab, where the eye already is — rather than back up at a chip the
       // rail may have scrolled away.
       if (tab != null && (!typed || everywhere > 0)) {
@@ -532,6 +682,38 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
       itemBuilder: (context, i) => items[i](),
       findChildIndexCallback: (key) =>
           key is ValueKey<String> ? rowAt[key.value] : null,
+    );
+  }
+
+  /// The line over one computer's harnesses: the machine, whether it is answering, and how many it
+  /// holds — `AgentsListPage`'s heading, in the terminal's own type rather than the app's.
+  ///
+  /// A dot and not a pill for the same reason as there: every machine that reaches this list has
+  /// answered, so the pill's word would read "Ready" group after group for the sake of the one that
+  /// says "Connecting".
+  Widget _machineHeader(PhoneMachineGroup group, Tty tty) {
+    final machine = widget.notifier.stateOf(group.machineId);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Tty.origin, 14, Tty.origin, 2),
+      child: Row(
+        children: [
+          if (machine != null) ...[
+            StatusDot(summary: phoneMachineSummary(machine), size: 7),
+            const SizedBox(width: 7),
+          ],
+          // Only this child flexes: a long machine name runs on and ellipses instead of giving up
+          // half the line to a Spacer, and the count stays at the right edge.
+          Flexible(
+            child: TtyText(
+              group.machineName.toUpperCase(),
+              color: tty.faint,
+              size: TtySize.meta,
+            ),
+          ),
+          const SizedBox(width: 7),
+          TtyText('${group.rows.length}', color: tty.faint, size: TtySize.meta),
+        ],
+      ),
     );
   }
 
@@ -883,7 +1065,9 @@ class PhoneSearchResultsState extends State<PhoneSearchResults> {
     openAgentPager(
       context,
       widget.notifier,
-      phoneSearchAgentEntries(_narrowed(search.rows, tab)),
+      // ⚠️ What was drawn, not what the ranking produced: grouped rows are drawn machine by
+      // machine ([_find]), and the pager walks the screen by index.
+      phoneSearchAgentEntries(_drawn ?? _listed(search.rows, tab)),
       entry,
     );
   }

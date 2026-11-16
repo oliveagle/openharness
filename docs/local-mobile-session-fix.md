@@ -237,3 +237,71 @@ fork 的 `main` **没有被动过**。
   一次** ref 才动（第一次只进了 FETCH_HEAD）。
 - 上游 main 会往前走，rebase 之后 `git diff <旧系列> HEAD` 会把 upstream 的几千行也算进去，
   别当成「我们的改动变多了」。
+
+---
+
+# 手机端按机器分组（2026-11-16）
+
+owner 的原话：「手机端如何切换机器的呢？我看是所有 session 都混在一个列表里边的对吧？
+可以优化么？分组，用机器分组？」
+
+## 问题在哪一屏
+
+- **不是** `AgentsListPage`（`lib/phone/agents_list_page.dart`，标题 `Harnesses`）—— 它早就
+  按机器分组了，但只能从终端的 `⋯` 抽屉或搜索进去。
+- 是 **`PickUpPage`**（`lib/phone/welcome/pick_up_page.dart`，首屏 `Pick up where you left off`）：
+  它直接复用 Find 的 `PhoneSearchResults`，而那一份是**一条平铺的排行列表**
+  （`needs you` / `recent` / `paused`，机器名只在每行第二行的 `机器:项目` 里）。
+
+## 改法（最小且不动 Find）
+
+`PhoneSearchResults` 新增 `groupByMachine`（默认 `false`，**只有首屏传 `true`**）：
+
+1. **每台机器一个标题**：`STATUSDOT + 机器名大写 + 该机器几条`（终端的字，`TtyText`）。
+   分组顺序 = 该组**第一行**在排行里的位置（不重新排序，排行仍然说话），组内保持排行顺序。
+2. **每台机器一个 chip**：`All computers / oleNucBoxEVOX2 5 / oleFedora01 4 / …`（不叫 All：
+  下一行的 tab 栏里已经有一个 All，两个都叫 All 说不清各自清的是哪一维），复用
+   `DeskTabFilterBar`（和桌面的 tab chips 同一个控件、同一套语义：`All` + 各机器，点了就窄化）。
+   - 只在**两台及以上**机器有 session 时画（一台机器的 chip 栏是纯装饰）。
+   - **不替换** tab chips：tab 栏仍在机器栏下面（`find_tab_new_harness_test.dart` 的
+     「pick-up 屏 New Harness 进选中 tab」那条仍在跑，tab 选择照样传给 `NewAgentPage.deskTabId`）。
+   - 计数按**当前 tab** 算（先 tab 后机器，外层是机器）。
+3. **`needs you` 仍然在最上面、跨机器**：把要你答的 harness 塞进某个机器组里，等于把唯一的
+   紧急信号埋掉；所以它单独一段，其余（`rest` / `current` / `paused`）才按机器分组。
+4. **分页顺序 = 画出来的顺序**：`_drawn`（`needs you` + 各组，按绘制顺序）交给
+   `openAgentPager`。分组会打乱排行顺序（A 机的第二行画在 B 机第一行前面），
+   用未分组的行建 pager 会让「往右滑」跳到不是旁边那个 harness。
+5. **一个都不能少**：`phoneMachineGroups()` 现在也收「Harness 没启动的对话」（`external`，
+   它有 `machineId` 但没有 `entry`，名字取 `machineLabel`）；分组覆盖不到的行
+   （机器行 / 项目行 / 命令行）追加在最后一组之后，**不丢**。
+6. 窄化到一台机器时**不画标题**（chip 已经写着是哪台）；该机器空空如也时给
+   `Nothing on <机器> can be reached right now.` + `Show all computers` 的出口。
+
+Find（终端里的搜索）**一个字没改**：带查询的列表仍是平铺排行 —— 标题会跟排行打架，
+那条理由写在 `phone_search_results.dart` 顶部和 `phone_search_groups.dart` 里。
+
+## 文件
+
+| 文件 | 改动 |
+|---|---|
+| `mobile/lib/phone/phone_search_results.dart` | `groupByMachine` / `_machineId` / `_machineChoices` / `_machine` / `_machineNarrowed` / `_listed` / `_machineHeader` / `_drawn` |
+| `mobile/lib/phone/phone_search_groups.dart` | 分组收 `external` 行；机器名回落 `machineLabel` |
+| `mobile/lib/phone/welcome/pick_up_page.dart` | `groupByMachine: true` |
+| `mobile/test/pick_up_machine_groups_test.dart` | 新，4 例 |
+
+## 验证
+
+```
+flutter analyze lib/phone test/pick_up_machine_groups_test.dart   # 只有那条既有的 phone_welcome.dart info
+flutter test test/pick_up_machine_groups_test.dart                # 4 passed
+flutter test test/phone_search_test.dart test/find_tab_new_harness_test.dart \
+             test/phone_edge test/desk_groups_test.dart test/desk_tab_filter_bar_test.dart \
+             test/phone_launch_tab_test.dart test/phone_restore_last_agent_test.dart
+                                                                  # +378 ~2 -3
+```
+
+- **那 3 个 `focus_behavior_test.dart` 失败是既有的**（skeleton → conversation view 的上游断言没跟上）：
+  把三个改动文件 `git stash` 之后**同样 3 个失败**，已现场复核。
+- 新 4 例覆盖：两机分组与标题顺序 / chip 窄化与回 All / `needs you` 在机器组之上 / 单机不画标题与 chip 栏。
+- APK：`pubspec.yaml` `1.0.17+92` → **`1.0.18+93`**，`flutter build apk --release` 后
+  8088 的 `/harness.apk` 直接就是新包（服务 cwd 就是 `build/app/outputs/flutter-apk`）。
