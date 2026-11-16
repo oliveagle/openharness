@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:harness_mobile/core/app_settings.dart';
+import 'package:harness_mobile/core/config.dart';
 import 'package:harness_mobile/core/app_version.dart';
 import 'package:harness_mobile/demo/sample_mode.dart'
     show SampleMode, SampleSession, openSampleMode;
@@ -28,6 +29,7 @@ import 'machine_profile_picker.dart';
 import 'machines_tab.dart';
 import 'phone_navigation.dart' show phoneRoute;
 import 'phone_name_store.dart';
+import 'welcome/your_computer.dart';
 import 'phone_sheet.dart';
 import 'settings_row.dart';
 import 'privacy_page.dart';
@@ -329,10 +331,21 @@ class _Body extends StatelessWidget {
 
   /// A computer showing its sign-in QR (`harness login --qr`, or the web app's "Scan with your
   /// phone"): this phone approves it with its own account.
+  /// A local deployment has no account for a computer to sign in to: the one way a computer
+  /// joins a phone there is the workstation's own pair QR (`AppConfig.localPairUrl`). The row
+  /// keeps its place and says what it does — opening the local pair page, whose camera reads that
+  /// QR — instead of a sign-in camera that can only read a cloud `/signin` code and would sit
+  /// there doing nothing at a local code.
   Widget _signInRow(BuildContext context) => SettingsRow(
     key: const Key('settings-sign-in-computer'),
-    title: 'Sign in a computer',
-    onTap: () => unawaited(signInAComputer(context, notifier)),
+    title: AppConfig.localMode ? 'Pair a computer' : 'Sign in a computer',
+    onTap: () => unawaited(
+      AppConfig.localMode
+          ? Navigator.of(context).push(
+              phoneRoute((_) => YourComputerPage(notifier: notifier)),
+            )
+          : signInAComputer(context, notifier),
+    ),
   );
 
   /// A Harness with no screen (a box, a mini PC): onto the person's Wi-Fi and signed in to this

@@ -305,3 +305,90 @@ flutter test test/phone_search_test.dart test/find_tab_new_harness_test.dart \
 - 新 4 例覆盖：两机分组与标题顺序 / chip 窄化与回 All / `needs you` 在机器组之上 / 单机不画标题与 chip 栏。
 - APK：`pubspec.yaml` `1.0.17+92` → **`1.0.18+93`**，`flutter build apk --release` 后
   8088 的 `/harness.apk` 直接就是新包（服务 cwd 就是 `build/app/outputs/flutter-apk`）。
+
+---
+
+# 装到手机上的其实是「云版」APK（2026-11-16 14:20）
+
+## 症状（owner 原话）
+
+- 手机上还是 Continue with Google / Apple 的云登录；
+- 「Sign in a computer」开了相机，扫我们的配对二维码 **完全没反应**；
+- 「Add computer」进去只有 `On your computer, go to autonomous.ai/go`，没有扫码；
+- 于是这台机器又被 remove 掉了 —— 反正对话读不到。
+
+## 根因：13:58 那个 APK 一个 `--dart-define` 都没带
+
+`mobile/build/app/outputs/flutter-apk/app-release.apk`（versionCode 93）是直接
+`flutter build apk --release` 打出来的。而本地部署的三个开关**全是编译期常量**
+（`mobile/lib/core/config.dart`）：
+
+| 常量 | 缺了会怎样 |
+|---|---|
+| `HARNESS_API_BASE_URL` | `apiBaseUrlOverride` 回落 `https://harness-api.autonomous.ai` |
+| `HARNESS_LOCAL_MODE` | 默认值 = `apiBaseUrlOverride != cloudApiBaseUrl` → **false** |
+| `HARNESS_LOCAL_PAIR_HOST` | 配对页主机回落 API 主机（云端） |
+
+于是「本地包」里跑的是**云的每一条分支**：
+
+- `PhoneWelcome` 走 `_Accounts`（Google / Apple / 邮箱），不进本地扫码；
+- `YourComputerPage` 走 `GoToComputer`（`autonomous.ai/go`），不进本地配对页；
+- Settings ▸ Sign in a computer 的相机是 `ScanToConnectPage(acceptConnectCodes: false)`，
+  只认 `/signin#k=hnq_…`；我们的 `/pair#…` 在 `_onDetect` 里两个 parse 都返回 null →
+  `continue` → **一点反应都没有**（不是崩溃，是静默跳过）；
+- 聊天连的是云 backend，那台机器不在云账号里 → 什么都没有。
+
+### 证据
+
+```
+$ strings -a lib/arm64-v8a/libapp.so | rg -c '10\.126\.126\.10:808'
+0                        # ← 没有 API origin：define 没进去
+$ strings -a lib/arm64-v8a/libapp.so | rg '10\.126\.126'
+10.126.126.10            # ← 只有 ConnectCode.localHost 那个硬编码常量
+$ aapt2 dump badging app-release.apk | rg '^package:'
+package: name='ai.autonomous.harness.android' versionCode='93' versionName='1.0.18'
+```
+
+`ai.autonomous.harness.android` 正是 **Play 商店那个包的 id**。本机没有上传密钥
+（`~/.android-release/harness-upload.properties` 不存在）→ release 用 debug key 签名 →
+与商店签名不同 → 系统**装不上**（「应用未安装」），能点开的仍是商店那个云版图标。
+所以「我装了你给的 APK」和「打开的是云版」可以同时成立。
+
+## 修法
+
+| 改动 | 为什么 |
+|---|---|
+| `scripts/build-local-apk.sh` | 一条命令打本地包：三个 define 全带、`--android-project-arg=harnessIdSuffix=.local`、打完**校验** `libapp.so` 里必须有 API origin，没有就报错、不发布 |
+| `android/app/build.gradle.kts`、`AndroidManifest.xml` | `appLabel` 占位符：有 id 后缀就叫 **Harness Local**（`.bench` → Harness Bench），与云版并排、一眼分得清 |
+| `mobile/lib/phone/settings_page.dart` | 本地模式下 Settings 那行改成 **Pair a computer**，进本地配对页（本地部署没有「给电脑登录」这回事） |
+| `scripts/local-apk-server.mjs` + `openharness-apk.service` | 8088 从 `node -e` 临时进程变成 systemd 服务；`/` 是安装页，写明 package / label / version / sha256 |
+
+## 验证
+
+```
+$ ./scripts/build-local-apk.sh
+package: name='ai.autonomous.harness.android.local' versionCode='93' versionName='1.0.18'
+application-label:'Harness Local'
+sha256 7c4f1eafddb07f2358dcf2ae191dcccccd26fe8dde044df1946d33fc39457f84
+served at http://10.126.126.10:8088/harness.apk
+
+$ unzip -p app-release.apk lib/arm64-v8a/libapp.so > /tmp/x.so
+$ strings -a /tmp/x.so | rg '10\.126\.126'
+10.126.126.10
+Open http://10.126.126.10:8089/pair on the workstation,
+Visit http://10.126.126.10:8089/pair
+http://10.126.126.10:8085     # ← API origin 在了，localMode 就是 true
+```
+
+- 坑：`unzip -p … | strings | rg -q` 在 `set -o pipefail` 下会**假失败**（rg 命中即退出 →
+  strings 吃 SIGPIPE → 141 → `!` 反转成"没找到"）。校验必须先把 `.so` 落到文件再 rg，
+  脚本注释里记了这条。
+
+## 手机上怎么装（这一次）
+
+1. 手机浏览器开 `http://10.126.126.10:8088/`，点下载；页面上的 sha256 应等于上面那个；
+2. 装 **Harness Local**（新图标，与商店的 Harness 并存，互不覆盖）；
+3. 打开它 —— 本地包一进来就直接开相机（`PhoneWelcome.initState` 里 `localMode` → `_Step.scan`）；
+4. 对着电脑上 `http://10.126.126.10:8089/pair` 的二维码扫。
+
+配对码 90 秒过期，页面每 20 秒自动换码；`local-pair-watch.ts` 一直等着新码，不用手动起 `harness pair`。

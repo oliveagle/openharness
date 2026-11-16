@@ -47,7 +47,18 @@ android {
         // (mobile/integration_test/README.md): `-P harnessIdSuffix=.bench`. A local build cannot
         // replace a Play install — Play re-signs the app with a key only Google holds — and
         // uninstalling it to make room signs the phone out.
-        (project.findProperty("harnessIdSuffix") as String?)?.let { applicationIdSuffix = it }
+        //
+        // The same switch builds a local deployment's copy (scripts/build-local-apk.sh):
+        // `--android-project-arg=harnessIdSuffix=.local` gives it its own id **and its own name**,
+        // "Harness Local". Beside the cloud app it is then a second icon, not a rival for the same
+        // slot — and the person can tell at a glance which one they opened.
+        val idSuffix = (project.findProperty("harnessIdSuffix") as String?)?.takeIf { it.isNotBlank() }
+        if (idSuffix != null) applicationIdSuffix = idSuffix
+        manifestPlaceholders["appLabel"] = idSuffix
+            ?.trimStart('.')
+            ?.replaceFirstChar { it.uppercase() }
+            ?.let { "Harness $it" }
+            ?: "Harness"
     }
 
     signingConfigs {
