@@ -26,12 +26,15 @@ cd "$root/mobile"
 
 origin=${api#*://}
 snapshot=$(mktemp)
+strings_out=$(mktemp)
 badging=$(mktemp)
-trap 'find "$snapshot" "$badging" -delete' EXIT
+trap 'find "$snapshot" "$strings_out" "$badging" -delete' EXIT
 unzip -p "$apk" lib/arm64-v8a/libapp.so > "$snapshot"
-# ⚠️ Read the snapshot from the file, not a pipe: `... | strings | rg -q` makes rg exit at the
-# first match, strings die of SIGPIPE, and pipefail turns a hit into a failure.
-if ! strings -a "$snapshot" | rg -q -F "$origin"; then
+# ⚠️ No pipes anywhere on this path. `… | strings | rg -q` makes rg exit at the first match, strings
+# die of SIGPIPE, and pipefail turns a hit into a failure — which is how a good local build once
+# failed its own check. Both stages write to files; only the last one is asked a question.
+strings -a "$snapshot" > "$strings_out"
+if ! rg -q -F "$origin" "$strings_out"; then
   echo "FAIL: $apk does not carry the API origin $origin" >&2
   echo "      that is the cloud build: local mode did not compile in. Not serving it." >&2
   exit 1
@@ -40,8 +43,10 @@ fi
 digest=$(sha256sum "$apk" | cut -d' ' -f1)
 "$aapt2" dump badging "$apk" > "$badging"
 rg '^package:|^application-label:' "$badging"
+# apk-info.mjs reads the badging text on stdin — hand it the file. Without this the page that is
+# supposed to name the build said "unknown — unknown" for every field it is there to answer.
 APK_SHA256="$digest" APK_API="$api" APK_PAIR_HOST="$pair_host" \
-  APK_INFO_PATH="${apk%.apk}-info.json" node "$root/scripts/apk-info.mjs" > /dev/null
+  APK_INFO_PATH="${apk%.apk}-info.json" node "$root/scripts/apk-info.mjs" < "$badging" > /dev/null
 echo "sha256 $digest"
 echo
 echo "served at http://$pair_host:8088/harness.apk"
