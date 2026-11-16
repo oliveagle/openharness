@@ -177,7 +177,22 @@ function attachUserClient(ws: WebSocket, user: AuthUser, surface: 'mobile' | 'we
   const terminalRate = new TerminalRateGuard()
   const p2pSignalRate = new P2pSignalRateGuard()
 
-  const send = (obj: unknown): boolean => guardedSendJson(ws, obj, 'must', { userId: user.sub })
+  const logWebFrame = (direction: 'in' | 'out', type: unknown): void => {
+    if (!process.env.LOG_WEB_FRAMES) return
+    logger.info('web frame', {
+      direction,
+      type: typeof type === 'string' ? type : '<binary>',
+      userId: user.sub,
+      surface,
+      connId: client?.connId,
+      machineId: currentAgentId,
+    })
+  }
+  const send = (obj: unknown): boolean => {
+    const type = obj && typeof obj === 'object' && 'type' in obj ? (obj as { type?: unknown }).type : null
+    logWebFrame('out', type)
+    return guardedSendJson(ws, obj, 'must', { userId: user.sub })
+  }
   // A refused browser frame would corrupt its VNC stream, so the client is told and closes its browser streams.
   const browserRefused = browserRateNotice(send)
   // Its connect and disconnect lines (lib/wsAttribution.ts): prod, 2026-10-28, 2,304 of 2,308 opens in 15 minutes
@@ -671,6 +686,7 @@ function attachUserClient(ws: WebSocket, user: AuthUser, surface: 'mobile' | 'we
   )
   ws.on('message', (raw: RawData, isBinary: boolean) => {
     if (isBinary) {
+      logWebFrame('in', null)
       const parsed = parseTerminalClientFrame(new Uint8Array(raw as Buffer))
       // A web/relay client only ever originates input, or a paste/imagePaste/pasteFile chunk —
       // output/keyframe/sync flow the other way. This gate is `parseTerminalClientFrame`'s own kind
@@ -693,6 +709,7 @@ function attachUserClient(ws: WebSocket, user: AuthUser, surface: 'mobile' | 'we
     }
     let frame: Frame
     try { frame = JSON.parse(raw.toString()) as Frame } catch { return }
+    logWebFrame('in', frame.type)
     markCpuKind(frameKind('web-ws', frame.type, WEB_FRAME_TYPES))
     inbox.enqueue(frame)
   })

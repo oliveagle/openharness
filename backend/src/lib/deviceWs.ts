@@ -191,12 +191,16 @@ function clipDeviceAgentName(input: string): string {
 
 function deviceAgentListItem(
   raw: unknown,
-): { id: unknown; name?: string; engine?: 'claude' | 'codex' | 'cursor' | 'opencode' | 'pi' | 'hermes' | 'commandcode' | 'devin'; selectedModel?: string | null } {
+): { id: unknown; name?: string; engine?: 'claude' | 'codex' | 'cursor' | 'opencode' | 'pi' | 'hermes' | 'commandcode' | 'devin'; selectedModel?: string | null; sessionId?: string } {
   const o = (raw ?? {}) as Record<string, unknown>
-  const item: { id: unknown; name?: string; engine?: 'claude' | 'codex' | 'cursor' | 'opencode' | 'pi' | 'hermes' | 'commandcode' | 'devin'; selectedModel?: string | null } = { id: o.id }
+  const item: { id: unknown; name?: string; engine?: 'claude' | 'codex' | 'cursor' | 'opencode' | 'pi' | 'hermes' | 'commandcode' | 'devin'; selectedModel?: string | null; sessionId?: string } = { id: o.id }
   if (typeof o.name === 'string') item.name = clipDeviceAgentName(o.name)
   if (o.engine === 'claude' || o.engine === 'codex' || o.engine === 'cursor' || o.engine === 'opencode' || o.engine === 'pi' || o.engine === 'hermes' || o.engine === 'commandcode' || o.engine === 'devin') item.engine = o.engine
   if (typeof o.selectedModel === 'string' || o.selectedModel === null) item.selectedModel = o.selectedModel
+  // The conversation's id, so a client that renders the transcript can ask for it (`session_get`).
+  // An opaque handle, not content: the transcript itself still comes from the machine, over E2EE.
+  // Without it a device could only ever show turn summaries — it had no way to name a conversation.
+  if (typeof o.sessionId === 'string' && o.sessionId) item.sessionId = o.sessionId.slice(0, 128)
   return item
 }
 
@@ -1167,7 +1171,7 @@ function relay(device: WebSocket, opts: RelayOpts): void {
     }
     // User actions must survive an idle stop. The strict frameChain holds them until the node has
     // re-registered; background multi-machine E2EE frames intentionally bypass this active-machine wake.
-    if (type === 'message' || type === 'agents_list' || type === 'agent_create' || type === 'agent_recent' || type === 'agent_update' || type === 'models_list') {
+    if (type === 'message' || type === 'agents_list' || type === 'agent_create' || type === 'agent_recent' || type === 'agent_update' || type === 'models_list' || type === 'sessions_list' || type === 'session_get') {
       try {
         await ensureActiveReady()
       } catch (err) {

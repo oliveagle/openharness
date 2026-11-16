@@ -126,7 +126,7 @@ export async function createSsoSession(
 }
 
 /** A new session for [userId]: a refresh token (stored hashed) and its first access token. */
-async function createSession(
+export async function createSession(
   userId: string, label: string, kind: HarnessSessionKind, sso?: ReturnType<typeof ssoSessionData>,
 ): Promise<HarnessTokens | null> {
   const user = await userService.get(userId)
