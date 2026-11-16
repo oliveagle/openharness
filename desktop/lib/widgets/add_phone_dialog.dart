@@ -137,7 +137,15 @@ Future<void> showAddPhoneDialog(
 
 /// Where the QR points. The phone's `ConnectCode` (mobile
 /// `lib/phone/welcome/connect_code.dart`) parses exactly this.
-const kPhonePairHost = 'harness.autonomous.ai';
+const kPhonePairCloudHost = 'harness.autonomous.ai';
+const kPhonePairHost = String.fromEnvironment(
+  'HARNESS_LOCAL_PAIR_HOST',
+  defaultValue: kPhonePairCloudHost,
+);
+const kPhonePairScheme = String.fromEnvironment(
+  'HARNESS_LOCAL_PAIR_SCHEME',
+  defaultValue: kPhonePairHost == kPhonePairCloudHost ? 'https' : 'http',
+);
 const kPhonePairPath = '/pair';
 
 /// The characters a pairing code is drawn from: no `0 O 1 I L`, which read
@@ -194,7 +202,7 @@ Uri phonePairLink({
   required String code,
   String? signIn,
 }) => Uri(
-  scheme: 'https',
+  scheme: kPhonePairScheme,
   host: kPhonePairHost,
   path: kPhonePairPath,
   fragment:

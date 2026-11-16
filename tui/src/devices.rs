@@ -382,8 +382,14 @@ fn query_component(s: &str) -> String {
 /// `https://harness.autonomous.ai/pair#e=<email>&m=<machineId>&c=<code>&h=<sign-in code>` — all of
 /// it in the fragment, which a browser never sends to a server, so the code stays off every log.
 pub fn pair_link(email: &str, machine: &str, code: &str, sign_in: Option<&str>) -> String {
+    let default_origin = format!("https://{PAIR_HOST}");
+    let origin = std::env::var("HARNESS_PAIR_ORIGIN")
+        .ok()
+        .map(|value| value.trim_end_matches("/").to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(default_origin);
     let h = sign_in.map(|s| format!("&h={}", query_component(s))).unwrap_or_default();
-    format!("https://{PAIR_HOST}{PAIR_PATH}#e={}&m={}&c={code}{h}", query_component(email), query_component(machine))
+    format!("{origin}{PAIR_PATH}#e={}&m={}&c={code}{h}", query_component(email), query_component(machine))
 }
 
 /// [text] as a QR code that fits [cols] × [rows] cells (two modules a cell, one above the other):
