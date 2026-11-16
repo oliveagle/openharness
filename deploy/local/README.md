@@ -2,8 +2,8 @@
 
 This is the deployment Harness runs on here: no cloud account, no `autonomous.ai` in the path. A
 workstation (this machine) holds the backend, the agent daemon and the phone's pair QR; the phone
-is an ordinary Android build compiled against those addresses, installed side by side with the
-store app.
+is an ordinary Android build compiled against those addresses, installed under its own id beside
+the store app. Both carry the same name, **Ole-Harness**.
 
 The whole thing is six systemd user units plus the scripts they run. `systemd/` in this folder is
 their source of truth; `~/.config/systemd/user/` is where they are installed from.
@@ -50,10 +50,11 @@ package a `.local` id suffix so it sits beside the store app instead of fighting
 and then checks the API origin is really inside `libapp.so` before it publishes anything.
 
 The tell that the phone is running *this* build, when a conversation will not load: launch it and the
-camera opens by itself, the entry in its settings is **Pair a computer**, and the icon is **Harness
-Local**. Google/Apple sign-in, "Sign in a computer", or a page that says `autonomous.ai/go` is the
-store app talking to the cloud — it can neither read our QR nor see this machine, and its chat stays
-empty however healthy the LAN stack is. Both can sit on the phone at once, so the icon matters.
+camera opens by itself, and the entry in its settings is **Pair a computer**. Google/Apple sign-in,
+"Sign in a computer", or a page that says `autonomous.ai/go` is the store app talking to the cloud —
+it can neither read our QR nor see this machine, and its chat stays empty however healthy the LAN
+stack is. The name on the icon does not tell the two apart, so remove the store app from the phone
+and the one icon left is this build.
 
 ## Proving it works, without a phone
 

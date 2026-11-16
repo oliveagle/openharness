@@ -105,7 +105,7 @@ function page() {
   }
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pair phone</title><style>html,body{margin:0;height:100%;display:grid;place-items:center;background:#fff}figure{margin:0;text-align:center;font:16px/1.5 system-ui,sans-serif;color:#555}img{width:min(90vw,520px);height:auto}figcaption{padding:12px}</style>
-<figure><img id="qr" alt="Pair QR" src="/qr.svg?t=${Date.now()}"><figcaption>Scan with <b>Harness Local</b></figcaption></figure>
+<figure><img id="qr" alt="Pair QR" src="/qr.svg?t=${Date.now()}"><figcaption>Scan with <b>Ole-Harness</b></figcaption></figure>
 <script>setInterval(()=>{document.getElementById('qr').src='/qr.svg?t='+Date.now()},15000)</script>`
 }
 

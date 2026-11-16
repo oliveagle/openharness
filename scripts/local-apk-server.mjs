@@ -69,11 +69,11 @@ function page() {
   ];
   if (d.stale) rows.push(['⚠ stale', 'this file is not the build in app-release-info.json — rebuild with scripts/build-local-apk.sh']);
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Harness Local</title><style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#0d1117;color:#e6edf3}
+<title>Ole-Harness</title><style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#0d1117;color:#e6edf3}
 a.btn{display:inline-block;padding:14px 20px;background:#2ea043;color:#fff;border-radius:8px;text-decoration:none;font-weight:600}
 dt{color:#8b949e;font-size:13px;text-transform:uppercase;letter-spacing:.04em}dd{margin:0 0 12px}
 code{word-break:break-all;font-size:13px}</style>
-<h2>Harness Local</h2><p><a class="btn" href="/harness.apk">Download the APK</a></p><dl>
+<h2>Ole-Harness</h2><p><a class="btn" href="/harness.apk">Download the APK</a></p><dl>
 ${rows.map(([k, v]) => `<dt>${k}</dt><dd><code>${v}</code></dd>`).join('')}
 </dl>`;
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build "Harness Local" for this deployment, where port 8088 serves it.
+# Build "Ole-Harness" for this deployment, where port 8088 serves it.
 #
 #   scripts/build-local-apk.sh
 #

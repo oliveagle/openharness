@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenHarness local APK download (Harness Local)
+Description=OpenHarness local APK download (Ole-Harness)
 After=network-online.target
 
 [Service]

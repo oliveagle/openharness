@@ -49,16 +49,15 @@ android {
         // uninstalling it to make room signs the phone out.
         //
         // The same switch builds a local deployment's copy (scripts/build-local-apk.sh):
-        // `--android-project-arg=harnessIdSuffix=.local` gives it its own id **and its own name**,
-        // "Harness Local". Beside the cloud app it is then a second icon, not a rival for the same
-        // slot — and the person can tell at a glance which one they opened.
+        // `--android-project-arg=harnessIdSuffix=.local` gives it its own id, so it installs beside
+        // the cloud app instead of fighting it for one slot.
+        //
+        // The name is the same for every build: "Ole-Harness". Letting the suffix rename the app
+        // as well left two homescreen icons a person could not tell apart, and the copy that
+        // matters is the one talking to this machine.
         val idSuffix = (project.findProperty("harnessIdSuffix") as String?)?.takeIf { it.isNotBlank() }
         if (idSuffix != null) applicationIdSuffix = idSuffix
-        manifestPlaceholders["appLabel"] = idSuffix
-            ?.trimStart('.')
-            ?.replaceFirstChar { it.uppercase() }
-            ?.let { "Harness $it" }
-            ?: "Harness"
+        manifestPlaceholders["appLabel"] = "Ole-Harness"
     }
 
     signingConfigs {

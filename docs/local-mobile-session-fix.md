@@ -359,7 +359,7 @@ package: name='ai.autonomous.harness.android' versionCode='93' versionName='1.0.
 | 改动 | 为什么 |
 |---|---|
 | `scripts/build-local-apk.sh` | 一条命令打本地包：三个 define 全带、`--android-project-arg=harnessIdSuffix=.local`、打完**校验** `libapp.so` 里必须有 API origin，没有就报错、不发布 |
-| `android/app/build.gradle.kts`、`AndroidManifest.xml` | `appLabel` 占位符：有 id 后缀就叫 **Harness Local**（`.bench` → Harness Bench），与云版并排、一眼分得清 |
+| `android/app/build.gradle.kts`、`AndroidManifest.xml` | `appLabel` 占位符：所有构建都叫 **Ole-Harness**（id 后缀只改包名，不改名字），与云版并排、不抢同一个位置 |
 | `mobile/lib/phone/settings_page.dart` | 本地模式下 Settings 那行改成 **Pair a computer**，进本地配对页（本地部署没有「给电脑登录」这回事） |
 | `scripts/local-apk-server.mjs` + `openharness-apk.service` | 8088 从 `node -e` 临时进程变成 systemd 服务；`/` 是安装页，写明 package / label / version / sha256 |
 
@@ -368,7 +368,7 @@ package: name='ai.autonomous.harness.android' versionCode='93' versionName='1.0.
 ```
 $ ./scripts/build-local-apk.sh
 package: name='ai.autonomous.harness.android.local' versionCode='93' versionName='1.0.18'
-application-label:'Harness Local'
+application-label:'Ole-Harness'
 sha256 7c4f1eafddb07f2358dcf2ae191dcccccd26fe8dde044df1946d33fc39457f84
 served at http://10.126.126.10:8088/harness.apk
 
@@ -387,7 +387,7 @@ http://10.126.126.10:8085     # ← API origin 在了，localMode 就是 true
 ## 手机上怎么装（这一次）
 
 1. 手机浏览器开 `http://10.126.126.10:8088/`，点下载；页面上的 sha256 应等于上面那个；
-2. 装 **Harness Local**（新图标，与商店的 Harness 并存，互不覆盖）；
+2. 装 **Ole-Harness**（新图标，与商店的 Harness 并存，互不覆盖）；
 3. 打开它 —— 本地包一进来就直接开相机（`PhoneWelcome.initState` 里 `localMode` → `_Step.scan`）；
 4. 对着电脑上 `http://10.126.126.10:8089/pair` 的二维码扫。
 
