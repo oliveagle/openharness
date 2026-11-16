@@ -246,7 +246,12 @@ class AgentConversationViewState extends State<AgentConversationView> {
         case 'tool_end':
           final summary = _string(payload['summary']).trim();
           final tool = _string(payload['tool']).trim();
-          final text = summary.isNotEmpty ? summary : tool;
+          // What the tool printed, not the one-line summary of it: the summary is the first line
+          // of the same result, and a reader on a phone is here for the result.
+          final result = _string(payload['output']).trim();
+          final text = result.isNotEmpty
+              ? result
+              : (summary.isNotEmpty ? summary : tool);
           if (text.isNotEmpty) {
             if (messages.isNotEmpty &&
                 messages.last.isTool &&
