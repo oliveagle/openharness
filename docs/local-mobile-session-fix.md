@@ -392,3 +392,61 @@ http://10.126.126.10:8085     # ← API origin 在了，localMode 就是 true
 4. 对着电脑上 `http://10.126.126.10:8089/pair` 的二维码扫。
 
 配对码 90 秒过期，页面每 20 秒自动换码；`local-pair-watch.ts` 一直等着新码，不用手动起 `harness pair`。
+
+---
+
+# 第三轮：二维码不再「扫了没反应」，安装页敢说自己是谁（2026-11-16 傍晚）
+
+## 1. 配对二维码的生命周期是错的
+
+上一轮把「生成即配对」改成「等手机 intent」，但保留了**每 40 秒换代**的做法：新一代替换掉
+旧 helper，连 watcher 一起 kill。两个后果：
+
+- 手机在换代前一刻扫到码（握手要 1–2 秒），watcher 在握手中间被 kill → 整次配对无声失败；
+- `/code` 返回的 `lastUrl` 不会在换代时清空，新 helper 还没打印之前它给出的是**上一代**的链接
+  → 任何按 `/code` 配对的客户端（本机 e2e）拿旧 code 去握手 → `CODE_MISMATCH`。
+
+这张码上其实有两个码，寿命完全不同：
+
+| 码 | 作用 | 寿命 |
+|---|---|---|
+| `h=` handoff | 手机换 token | 90 秒，**会过期** |
+| `c=` pair code | CPace 口令，只在握手那一下比对 | 不过期，**不该换** |
+
+所以改成：**一次配对 = 一个 watcher + 一个固定 pair code**，helper 每 30 秒重新铸一个
+handoff、用同一个 pair code 重画二维码（先写临时文件再 rename，读者永远读不到半个 SVG）。
+换代从此不再存在，两个故障同时消失。
+
+| 文件 | 改动 |
+|---|---|
+| `scripts/local-pair-qr.mjs` | 一个固定 `pairCode` + 一个 watcher；循环 30s 重铸 handoff 并原子重画 `/tmp/qr.svg`；watcher 退出即结束 |
+| `scripts/local-pair-qr-server.mjs` | 删掉 generation 与「expired 占位图」；只保证有一个 helper 活着，`/pair` 报状态（`starting/waiting/paired/expired`），`/code` 等本代的 `url:` 行 |
+
+## 2. 本机 e2e 的默认口令是假的
+
+`cli/scripts/fake-phone-qr-e2e.mjs` 里 `PAIR_CODE` 默认 `'FAKEPHONE1'`：不传参直接跑，必然
+`CODE_MISMATCH` —— 看起来像「本地部署坏了」，其实是脚本自己在猜口令。现在不传参就从
+`http://<host>:8089/code` 取**页面上正在显示的那张码**（`c=` 与 `h=` 一起），跑一次就验证
+「此刻屏幕上的二维码能不能配对」。
+
+```
+$ node cli/scripts/fake-phone-qr-e2e.mjs
+· took the QR on screen (pair code 4TEFGCPRRZS8XJKW)
+· paired with the machine (fingerprint D72A·FFA2·62DE·4C29)
+· agents_list → 12 agents
+✓ session_get → 81 events (title "启动项目并运行")
+```
+
+## 3. 安装页说「unknown — unknown」
+
+`local-apk-server.mjs` 读 `apk-info.json`，而 `build-local-apk.sh` 写的是
+`app-release-info.json` —— 页面在**服务正确文件**的同时把 app/version 显示成 unknown，
+恰好把「手机装的到底是哪个包」这个唯一能自证的字段弄丢了。现在读对文件，并且额外显示这个
+包编译进去的 API origin 和配对页地址；如果磁盘上的 APK 与 info 文件不是同一个构建，页面自己
+打 `⚠ stale`。
+
+## 4. 手机端能自证「我是本地包」
+
+Settings ▸ About 增加一行 **Local server**（只在本地构建出现），值就是它实际连的
+`host:port`。装完打开 Settings 一眼可辨：写 `10.126.126.10:8085` 的是本地包，写
+`harness-api.autonomous.ai`（或者根本没有这一行）的是商店那个云版。

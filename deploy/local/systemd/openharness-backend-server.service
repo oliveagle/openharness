@@ -1,0 +1,15 @@
+[Unit]
+Description=OpenHarness local backend server
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/data/repos/github.com/autonomous-ai/openharness/backend
+Environment=NODE_ENV=development
+EnvironmentFile=/mnt/data/repos/github.com/autonomous-ai/openharness/backend/.env.local
+ExecStart=/home/oliveagle/.local/node/bin/node --import /mnt/data/repos/github.com/autonomous-ai/openharness/backend/node_modules/tsx/dist/loader.mjs src/server.ts
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenHarness local web viewer
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/data/repos/github.com/autonomous-ai/openharness
+ExecStart=/home/oliveagle/.local/node/bin/node /mnt/data/repos/github.com/autonomous-ai/openharness/scripts/local-web-server.mjs /mnt/data/repos/github.com/autonomous-ai/openharness/desktop/build/web-local 8091
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

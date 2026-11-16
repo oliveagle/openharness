@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenHarness local APK download (Harness Local)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/data/repos/github.com/autonomous-ai/openharness
+ExecStart=/home/oliveagle/.local/node/bin/node scripts/local-apk-server.mjs 8088
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

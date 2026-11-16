@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenHarness local Add-phone QR
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/data/repos/github.com/autonomous-ai/openharness
+Environment=HARNESS_LOCAL_BACKEND=http://10.126.126.10:8085
+Environment=BACKEND_WS_URL=ws://10.126.126.10:8085
+Environment=WEB_URL=http://10.126.126.10:8085
+Environment=ADAPTER_DATA_DIR=/home/oliveagle/.harness/cli/data
+Environment=HERDR_BIN=/home/oliveagle/.local/bin/herdr
+Environment=TERMINAL_BACKENDS=herdr
+ExecStart=/home/oliveagle/.local/node/bin/node /mnt/data/repos/github.com/autonomous-ai/openharness/scripts/local-pair-qr-server.mjs
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
