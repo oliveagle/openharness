@@ -241,6 +241,11 @@ class _Body extends StatelessWidget {
         children: [
           const _VersionRow(),
           const _BuildRow(),
+          // A local deployment's app and the store app install side by side and look the same on
+          // the phone. The server a build talks to is the one fact that says which one is open —
+          // and "am I looking at the local build?" was the question that cost this deployment a
+          // round trip every time.
+          if (AppConfig.localMode) _LocalServerRow(baseUrl: notifier.config.apiBaseUrl),
           // The stores want the policy reachable from inside the app — see [kPrivacyPolicyUrl].
           SettingsRow(
             title: 'Privacy Policy',
@@ -1020,6 +1025,27 @@ class _VersionRow extends StatelessWidget {
       return SettingsRow(title: 'Version', value: snapshot.data ?? '');
     },
   );
+}
+
+/// The backend this build talks to — shown only by a local deployment build, where the answer is
+/// a LAN address rather than the cloud API hostname.
+class _LocalServerRow extends StatelessWidget {
+  const _LocalServerRow({required this.baseUrl});
+
+  /// The *effective* origin, not the compile-time default: a stored override wins, and a row that
+  /// named a server the app is not using would be worse than no row at all.
+  final String baseUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    AppTheme.watch(context);
+    final uri = Uri.tryParse(baseUrl);
+    // host:port is what a person would type into a browser to check the same server by hand.
+    final value = uri == null
+        ? baseUrl
+        : (uri.hasPort ? '${uri.host}:${uri.port}' : uri.host);
+    return SettingsRow(title: 'Local server', value: value);
+  }
 }
 
 /// The build behind the version — `buildNumber` from the bundle, and the store's own identifier.
