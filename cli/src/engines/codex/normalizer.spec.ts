@@ -907,4 +907,15 @@ describe('Codex shell result envelope', () => {
     const raw = 'Chunk ID: f13c4e\nOutput:\nrows'
     expect(end(raw, 'mcp__x__run').output).toBe(raw)
   })
+
+  it('reads the exec family\'s own header too, not only the shell\'s', () => {
+    const done = end('Chunk ID: fedcec1\nWall time: 197.8362 seconds\nProcess exited with code 0', 'write_stdin')
+    expect(done.output).toBe('')
+    expect(done.summary).toBe('write_stdin completed')
+  })
+
+  it('reads a non-zero exit from the exec family as an error', () => {
+    const done = end('Chunk ID: fedcec1\nProcess exited with code 2', 'write_stdin')
+    expect(done.isError).toBe(true)
+  })
 })

@@ -249,17 +249,24 @@ class AgentConversationViewState extends State<AgentConversationView> {
           // What the tool printed, not the one-line summary of it: the summary is the first line
           // of the same result, and a reader on a phone is here for the result.
           final result = _string(payload['output']).trim();
-          final text = result.isNotEmpty
-              ? result
-              : (summary.isNotEmpty ? summary : tool);
+          final text = result.isNotEmpty ? result : summary;
           if (text.isNotEmpty) {
             if (messages.isNotEmpty &&
                 messages.last.isTool &&
                 messages.last.role == ConversationRole.assistant) {
+              // The tool's own row is already there: fill it with what the tool printed. A tool
+              // that printed nothing keeps that row as it is — "Bash" says more than
+              // "Bash completed" does.
               final last = messages.removeLast();
-              messages.add(ConversationMessage.tool('${last.text} — $text'));
+              messages.add(ConversationMessage.tool(
+                result.isNotEmpty ? '${last.text} — $result' : last.text,
+              ));
             } else {
-              messages.add(ConversationMessage.tool(text));
+              messages.add(ConversationMessage.tool(
+                result.isNotEmpty && tool.isNotEmpty
+                    ? '$tool — $result'
+                    : text,
+              ));
             }
           }
         case 'subagent_finished':

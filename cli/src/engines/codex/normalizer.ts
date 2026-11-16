@@ -11,6 +11,16 @@ type JsonObject = Record<string, unknown>
 
 const MAX_OUTPUT = 2_000
 const MAX_THINKING = 500
+/** Codex's exec family: the tools that run a command and report it under a header
+ *  (`Chunk ID: …`, `Wall time: …`, `Process exited with code N`, then `Output:`). */
+const EXEC_TOOLS = new Set([
+  'exec_command',
+  'shell',
+  'local_shell',
+  'unified_exec',
+  'write_stdin',
+])
+
 const ORCHESTRATION_TOOLS = new Set([
   'spawn_agent',
   'wait_agent',
@@ -471,9 +481,10 @@ export class CodexNormalizer implements EngineNormalizer {
       this.toolNames.delete(id)
       const rawOutput = outputText(item.output)
       const shell = name === 'Bash' // only a shell prints an exit code as a header; an MCP/web result may merely quote one
-      const isError = item.is_error === true || item.status === 'failed' || (shell && nonZeroExit(rawOutput))
+      const exec = EXEC_TOOLS.has(rawName) // the exec family prints that header whatever the tool is called
+      const isError = item.is_error === true || item.status === 'failed' || ((shell || exec) && nonZeroExit(rawOutput))
       // The exit code is read from the whole header; what the readers get is the result under it.
-      const result = shell ? shellResult(rawOutput) : rawOutput
+      const result = exec ? shellResult(rawOutput) : rawOutput
       return [{
         type: 'tool_end',
         payload: {
