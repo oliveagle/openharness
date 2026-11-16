@@ -871,3 +871,40 @@ describe('Codex tool_end outputTail', () => {
     expect(done.outputTail).toBe(done.output)
   })
 })
+
+describe('Codex shell result envelope', () => {
+  const end = (output: string, name = 'exec_command') => {
+    const n = new CodexNormalizer('live')
+    n.ingest(line('response_item', { type: 'function_call', call_id: 'c1', name, arguments: JSON.stringify({ cmd: 'ls' }) }))
+    return n.ingest(line('response_item', { type: 'function_call_output', call_id: 'c1', output }))[0].payload as {
+      output: string
+      outputTail: string
+      summary: string
+      isError: boolean
+    }
+  }
+
+  it('gives the result, not the header Codex wraps it in', () => {
+    const done = end('Chunk ID: f13c4e\nWall time: 6.2949 seconds\nProcess exited with code 0\nOutput:\nok')
+    expect(done.output).toBe('ok')
+    expect(done.outputTail).toBe('ok')
+    expect(done.summary).toBe('ok')
+  })
+
+  it('keeps the exit code for the error, and gives the result to the reader', () => {
+    const done = end('Chunk ID: d9\nWall time: 0.3 seconds\nProcess exited with code 2\nOutput:\nboom')
+    expect(done.isError).toBe(true)
+    expect(done.output).toBe('boom')
+    expect(done.summary).toBe('Bash failed: boom')
+  })
+
+  it('drops the header when there is no Output: line to read under', () => {
+    const done = end('Chunk ID: f13c4e\nWall time: 0.2 seconds\nok')
+    expect(done.output).toBe('ok')
+  })
+
+  it('leaves another tool\'s result alone', () => {
+    const raw = 'Chunk ID: f13c4e\nOutput:\nrows'
+    expect(end(raw, 'mcp__x__run').output).toBe(raw)
+  })
+})

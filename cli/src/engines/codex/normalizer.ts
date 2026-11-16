@@ -145,6 +145,17 @@ function outputText(value: unknown): string {
   try { return JSON.stringify(value) ?? '' } catch { return String(value) }
 }
 
+/** Codex wraps a shell result in a header — `Chunk ID: …`, `Wall time: …`, `Process exited with
+ * code N`, then `Output:` — and the result is under it. Every reader wants the result: a summary taken
+ * from the header says "Chunk ID: f13c4e", and an app away from this computer shows that line alone. */
+function shellResult(output: string): string {
+  const lines = output.split('\n')
+  const header = lines.findIndex((line) => line.trim().toLowerCase() === 'output:')
+  if (header >= 0) return lines.slice(header + 1).join('\n')
+  const kept = lines.filter((line) => !/^(?:Chunk ID:|Wall time:|Process exited with code\b|Exit code:)/.test(line.trim()))
+  return kept.join('\n')
+}
+
 /** A shell result that says it exited non-zero: exec_command prints "Process exited with code N" (or
  * "Exit code: N") as a header line, and the older shell tool wraps `metadata.exit_code` in JSON. */
 function nonZeroExit(output: string): boolean {
@@ -461,15 +472,17 @@ export class CodexNormalizer implements EngineNormalizer {
       const rawOutput = outputText(item.output)
       const shell = name === 'Bash' // only a shell prints an exit code as a header; an MCP/web result may merely quote one
       const isError = item.is_error === true || item.status === 'failed' || (shell && nonZeroExit(rawOutput))
+      // The exit code is read from the whole header; what the readers get is the result under it.
+      const result = shell ? shellResult(rawOutput) : rawOutput
       return [{
         type: 'tool_end',
         payload: {
           id,
           tool: name,
-          output: clip(rawOutput, MAX_OUTPUT),
-          ...(shell ? { outputTail: rawOutput.slice(-600) } : {}),
+          output: clip(result, MAX_OUTPUT),
+          ...(shell ? { outputTail: result.slice(-600) } : {}),
           isError,
-          summary: toolSummary(name, rawOutput, isError),
+          summary: toolSummary(name, result, isError),
         },
       }]
     }
