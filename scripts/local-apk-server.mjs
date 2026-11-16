@@ -17,7 +17,10 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = join(here, '..', 'mobile', 'build', 'app', 'outputs', 'flutter-apk');
 const apk = join(dir, 'app-release.apk');
-const info = join(dir, 'apk-info.json');
+// Written by scripts/build-local-apk.sh next to the APK it describes (`app-release-info.json`).
+// Reading a different name here is how this page once said `unknown — unknown` while serving the
+// right file: the phone had no way to tell which build it was being handed.
+const info = join(dir, 'app-release-info.json');
 const port = Number(process.argv[2] ?? process.env.APK_PORT ?? 8088);
 
 let cached = { key: '', sha256: '' };
@@ -41,6 +44,11 @@ function details() {
     bytes: st.size,
     builtAt: new Date(st.mtimeMs).toISOString(),
     sha256: sha256(),
+    api: meta.api ?? 'unknown',
+    pairHost: meta.pairHost ?? 'unknown',
+    // The info file describes the build that was published; if the APK on disk is newer (a plain
+    // `flutter build apk` overwrote it) the page must not present it as this build.
+    stale: Boolean(meta.sha256) && meta.sha256 !== sha256(),
   };
 }
 
@@ -52,7 +60,10 @@ function page() {
     ['built', d.builtAt],
     ['size', `${(d.bytes / 1048576).toFixed(1)} MB`],
     ['sha256', d.sha256],
+    ['api', d.api],
+    ['pair qr', `http://${d.pairHost}:8089/pair`],
   ];
+  if (d.stale) rows.push(['⚠ stale', 'this file is not the build in app-release-info.json — rebuild with scripts/build-local-apk.sh']);
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Harness Local</title><style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#0d1117;color:#e6edf3}
 a.btn{display:inline-block;padding:14px 20px;background:#2ea043;color:#fff;border-radius:8px;text-decoration:none;font-weight:600}
