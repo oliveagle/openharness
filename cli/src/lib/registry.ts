@@ -56,7 +56,7 @@ import { OPENCLAW_KEY } from '../engines/openclaw/contract.js'
 import { bootChanged, currentBootId } from './bootId.js'
 import { lockOwnerAlive, lockStartMarker, processLockIdentity } from './processLiveness.js'
 import { hardenPrivateStateFileIfPresent, readPrivateStateFile, secureStateDirectory, syncStateDirectory } from './secureState.js'
-import { mergeTerminalRuntimes, primaryRuntime, processIdentityKey, sameProcessIdentity, terminalPlacementKey, terminalRouteKey } from './terminalRuntime.js'
+import { HERDR_PANE, mergeTerminalRuntimes, primaryRuntime, processIdentityKey, sameProcessIdentity, terminalPlacementKey, terminalRouteKey } from './terminalRuntime.js'
 import type { HookTerminalHint, ProcessIdentity, TerminalRuntimeRef } from './terminalTypes.js'
 import { externalReservations, externalResumePending, externalResumeIds, parseExternalResume, type ExternalResumeIntent } from './externalResume.js'
 import type { StartedBy } from './agentAttribution.js'
@@ -661,49 +661,18 @@ function boundedIdentityPart(value: unknown, max = 200): value is string {
 
 export function validTerminalRuntime(value: unknown): value is TerminalRuntimeRef {
   if (!value || typeof value !== 'object') return false
-  const runtime = value as { backend?: unknown; paneId?: unknown; instance?: unknown }
-  if (typeof runtime.paneId !== 'string' || !PANE_RE.test(runtime.paneId)) return false
+  const runtime = value as { backend?: unknown; paneId?: unknown; instance?: unknown; endpointId?: unknown; sessionName?: unknown; terminalId?: unknown }
+  if (typeof runtime.paneId !== 'string') return false
+  // Herdr names a pane `w<workspace>:p<pane>`; tmux and ptyhost both use a bare `%N`.
+  if (runtime.backend === 'herdr') {
+    return HERDR_PANE.test(runtime.paneId)
+      && boundedIdentityPart(runtime.endpointId)
+      && boundedIdentityPart(runtime.sessionName)
+      && boundedIdentityPart(runtime.terminalId)
+  }
+  if (!PANE_RE.test(runtime.paneId)) return false
   if (runtime.backend === 'tmux') return true
   return runtime.backend === 'ptyhost' && typeof runtime.instance === 'string' && PTY_INSTANCE_RE.test(runtime.instance)
-}
-
-function retiredRuntime(value: unknown): boolean {
-  return !!value && typeof value === 'object' && (value as { backend?: unknown }).backend === 'herdr'
-}
-
-/**
- * Earlier builds could also place an agent in a Herdr pane. That backend is gone, so its runtimes are
- * dropped on read — the rest of the row is untouched, and a primary that named one falls to the first
- * remaining tmux route. Returns `null` for a row left with no terminal at all: nothing can reach it.
- * A row without a retired runtime is returned as is.
- */
-function withoutRetiredRuntimes(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
-  const row = value as Record<string, unknown>
-  if (!Array.isArray(row.runtimes) || !row.runtimes.some(retiredRuntime)) return value
-  const runtimes = row.runtimes.filter((runtime) => !retiredRuntime(runtime))
-  const hasLegacyPane = typeof row.tmuxPane === 'string' && PANE_RE.test(row.tmuxPane)
-  if (!runtimes.length && !hasLegacyPane) return null
-  const { runtimes: _retired, ...rest } = row
-  const cleaned: Record<string, unknown> = runtimes.length ? { ...rest, runtimes } : rest
-  if (typeof row.primaryRuntimeKey === 'string' && row.primaryRuntimeKey.startsWith('herdr\u0000')) {
-    const first = runtimes.find(validTerminalRuntime)
-    cleaned.primaryRuntimeKey = first ? terminalRouteKey(first) : ''
-  }
-  // A v2 row always carries `runtimes`, even when only the legacy pane is left to fill it.
-  if (!runtimes.length && Object.hasOwn(row, 'schemaVersion')) {
-    const pane = { backend: 'tmux' as const, paneId: row.tmuxPane as string }
-    cleaned.runtimes = [pane]
-    cleaned.primaryRuntimeKey = terminalRouteKey(pane)
-  }
-  return cleaned
-}
-
-/** `withoutRetiredRuntimes` over a whole stored file, dropping the rows it empties. */
-function withoutRetiredRows(stored: readonly unknown[]): { rows: unknown[]; dropped: number; changed: boolean } {
-  const cleaned = stored.map(withoutRetiredRuntimes)
-  const rows = cleaned.filter((row, i) => row !== null || stored[i] === null)
-  return { rows, dropped: stored.length - rows.length, changed: cleaned.some((row, i) => row !== stored[i]) }
 }
 
 /**
@@ -762,7 +731,7 @@ function persistedRow(entry: RegisteredSession): RegisteredSession | Omit<Regist
 }
 
 export function strictPersistedRow(raw: unknown): RegisteredSession | null {
-  const value = withoutRetiredRuntimes(raw)
+  const value = raw
   if (!value || typeof value !== 'object') return null
   const row = withRetiredSwarmMode(value as Partial<RegisteredSession>)
   const runtimes = normalizedRuntimes(row.runtimes, row.tmuxPane)
@@ -1399,8 +1368,7 @@ class Registry {
         this.quarantine('root is not an array')
         return
       }
-      const { rows: parsed, dropped, changed: strippedRetired } = withoutRetiredRows(stored)
-      if (dropped) console.log(`[registry] dropped ${dropped} agent(s) that lived only in a retired Herdr terminal`)
+      const parsed = stored
       if (parsed.some(hasUnknownRowSchema) || parsed.some(value => !!value && typeof value === 'object'
         && Object.hasOwn(value, 'externalResume') && !strictPersistedRow(value))) {
         this.writeBlocked = true
@@ -1435,11 +1403,10 @@ class Registry {
       const swarmAuto = retired.some((row, i) => row !== arr[i])
       if (swarmAuto) console.log(`[registry] ${retired.filter((row, i) => row !== arr[i]).length} agent(s) the Swarm started come back in Auto-approve`)
       arr = retired
-      // The rollback copy is the file as found, retired runtimes and all — not the cleaned rows.
       if (arr.some((row) => row.schemaVersion !== 2)) {
         atomicWriteJson(PRE_V2_BACKUP_FILE, stored, true)
       }
-      let changed = strippedRetired || swarmAuto || (ownModes && arr.some((row, i) => row !== parsed[i]))
+      let changed = swarmAuto || (ownModes && arr.some((row, i) => row !== parsed[i]))
       if (rebooted) {
         this.rebooted = true
         console.log(`[registry] machine rebooted since last run — ${arr.length} agent(s) kept with their process identity cleared (stale panes, restored on start)`)
@@ -3207,7 +3174,7 @@ class Registry {
           if (!existsSync(FILE)) return []
           const stored = JSON.parse(readPrivateStateFile(FILE)) as unknown
           if (!Array.isArray(stored)) throw new Error('registry root changed to a non-array value')
-          const parsed = withoutRetiredRows(stored).rows
+          const parsed = stored
           if (parsed.some(hasUnknownRowSchema) || parsed.some(value => !!value && typeof value === 'object'
         && Object.hasOwn(value, 'externalResume') && !strictPersistedRow(value))) {
             throw new Error('registry contains an unknown row schema')

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { EnvIssue, flag, matching, maybe, maybeNumber, number, oneOf, parseEnv, text, unlessFalse, url, type EnvField, type EnvOf } from './envFields.js'
-import { parseTerminalBackends } from './terminalConfig.js'
+import { parseHerdrSessions, parseTerminalBackends } from './terminalConfig.js'
 import { adoptComputerId } from '../lib/computerIdentity.js'
 import { openclawDefaultStateDir } from '../engines/openclaw/contract.js'
 
@@ -282,6 +282,14 @@ const fields = {
     }
   },
   // Neutral discovery interval. The legacy tmux name remains a one-release fallback.
+  // The Hermes-style Herdr CLI the backend drives (else resolved from PATH), and the sessions to drive.
+  // HERDR_SESSIONS unset means AUTO: every running Herdr session on this machine.
+  HERDR_BIN: text('herdr'),
+  HERDR_SESSIONS: (raw: string | undefined): string[] | undefined => {
+    try { return parseHerdrSessions(raw) } catch (error) {
+      throw new EnvIssue(error instanceof Error ? error.message : 'invalid Herdr sessions')
+    }
+  },
   TERMINAL_RECONCILE_INTERVAL_MS: maybeNumber,
   // How often (ms) the reaper checks tmux panes and drops dead sessions.
   TMUX_REAP_INTERVAL_MS: number('5000'),

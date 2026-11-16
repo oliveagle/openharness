@@ -140,6 +140,10 @@ export async function createAndRegisterPane<Ref extends TerminalRuntimeRef = Ter
       ...(deps.paneLaunch?.afterExit ? { afterExit: deps.paneLaunch.afterExit } : {}),
       ...(deps.paneLaunch?.clearInherited?.length ? { clearInherited: deps.paneLaunch.clearInherited } : {}),
       label,
+      // The workspace a person sees in the backend's own UI (Herdr's sidebar) is the agent's folder and name,
+      // not the login shell's start folder or tmux's session label.
+      ...(deps.cwd ? { workspaceCwd: deps.cwd } : {}),
+      ...(deps.defaultName?.trim() ? { workspaceLabel: deps.defaultName.trim() } : deps.label?.trim() ? { workspaceLabel: deps.label.trim() } : {}),
       command: deps.argv,
       ...(deps.current ? { current: deps.current } : {}),
       ...(deps.onDispatch ? { onDispatch: deps.onDispatch } : {}),

@@ -279,6 +279,10 @@ function readBody(req: http.IncomingMessage, maximum = MAX_HOOK_BODY_BYTES): Pro
   })
 }
 
+/** A Herdr pane id, as Herdr names its panes: `w<workspace>:p<pane>`. */
+/** A Herdr pane route; both halves are Herdr's counters in base 36 (`w7:pK` is a real pane). */
+const HERDR_PANE = /^w[0-9A-Za-z]{1,9}:p[0-9A-Za-z]{1,9}$/
+
 function normalizedRuntimeHints(body: RegisterInput): HookTerminalHint[] {
   const hints: HookTerminalHint[] = []
   if (Array.isArray(body.runtimeHints) && body.runtimeHints.length <= 4) {
@@ -286,6 +290,15 @@ function normalizedRuntimeHints(body: RegisterInput): HookTerminalHint[] {
       if (hint?.backend === 'tmux' && /^%\d+$/.test(hint.paneId)) hints.push({ backend: 'tmux', paneId: hint.paneId })
       else if (hint?.backend === 'ptyhost' && PTY_HOST_INSTANCE.test(hint.instance) && /^%\d{1,9}$/.test(hint.paneId)) {
         hints.push({ backend: 'ptyhost', instance: hint.instance, paneId: hint.paneId })
+      } else if (hint?.backend === 'herdr' && HERDR_PANE.test(hint.paneId)) {
+        // A pane of a Herdr session, as its shell names itself (HERDR_PANE_ID): the pane, and the
+        // socket it belongs to when the shell knows it. The socket is a lookup hint, never authority.
+        hints.push({
+          backend: 'herdr',
+          paneId: hint.paneId,
+          ...(typeof hint.sessionName === 'string' ? { sessionName: hint.sessionName } : {}),
+          ...(typeof hint.socketPath === 'string' ? { socketPath: hint.socketPath } : {}),
+        })
       }
     }
   }
@@ -408,11 +421,14 @@ async function hermesCreationPane(sessionId: string): Promise<HookTerminalHint |
  */
 async function hermesSessionHint(sessionId: string): Promise<HookTerminalHint | null> {
   const created = await hermesCreationPane(sessionId)
-  if (created && registry.byRuntimeEngine(created, 'hermes')) return created
+  if (created && created.backend !== 'herdr' && registry.byRuntimeEngine(created, 'hermes')) return created
   const bound = registry.bySession(sessionId)
   const runtime = bound?.engine === 'hermes' ? bound.runtimes[0] : undefined
-  if (runtime) return runtime.backend === 'tmux' ? { backend: 'tmux', paneId: runtime.paneId }
-    : { backend: 'ptyhost', instance: runtime.instance, paneId: runtime.paneId }
+  if (runtime) {
+    if (runtime.backend === 'tmux') return { backend: 'tmux', paneId: runtime.paneId }
+    if (runtime.backend === 'ptyhost') return { backend: 'ptyhost', instance: runtime.instance, paneId: runtime.paneId }
+    return { backend: 'herdr', paneId: runtime.paneId, sessionName: runtime.sessionName }
+  }
   return created
 }
 

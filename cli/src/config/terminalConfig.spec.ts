@@ -1,7 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultTerminalBackends, parseTerminalBackends } from './terminalConfig.js'
-
-afterEach(() => vi.restoreAllMocks())
+import { describe, expect, it } from 'vitest'
+import { defaultTerminalBackends, parseHerdrSessions, parseTerminalBackends } from './terminalConfig.js'
 
 describe('terminal backend configuration', () => {
   it('watches tmux, and only tmux, when nothing is configured off Windows', () => {
@@ -18,32 +16,30 @@ describe('terminal backend configuration', () => {
 
   it('treats an explicit value as a pin', () => {
     expect(parseTerminalBackends('tmux')).toEqual(['tmux'])
-  })
-
-  /**
-   * A machine that still names the retired herdr backend must keep running. The daemon SELF-UPDATES:
-   * refusing to start on a retired name would take down an unattended computer at the moment it picked
-   * up a new build, for a setting the user cannot be there to fix. So it is dropped, loudly, not fatal.
-   */
-  it('drops the retired herdr backend with a warning instead of refusing to start', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    expect(parseTerminalBackends('tmux,herdr')).toEqual(['tmux'])
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no longer a supported backend'))
-  })
-
-  it('falls back to tmux when herdr was the only backend named', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    expect(parseTerminalBackends('herdr')).toEqual(['tmux'])
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('falling back to tmux'))
+    expect(parseTerminalBackends('herdr')).toEqual(['herdr'])
+    expect(parseTerminalBackends('herdr,tmux')).toEqual(['herdr', 'tmux'])
   })
 
   it.each(['', ' ', 'tmux,', 'tmux,,tmux', 'tmux,tmux', 'screen'])('rejects invalid TERMINAL_BACKENDS=%j', (value) => {
     expect(() => parseTerminalBackends(value)).toThrow(/TERMINAL_BACKENDS/)
   })
 
-  it('names both supported backends when it rejects one', () => {
-    expect(() => parseTerminalBackends('screen')).toThrow('expected tmux or ptyhost')
+  it('names every supported backend when it rejects one', () => {
+    expect(() => parseTerminalBackends('screen')).toThrow('expected tmux, ptyhost or herdr')
+  })
+})
+
+describe('Herdr session configuration', () => {
+  it('leaves sessions to discovery when unset or empty', () => {
+    expect(parseHerdrSessions(undefined)).toBeUndefined()
+    expect(parseHerdrSessions('')).toBeUndefined()
+  })
+
+  it('accepts the names Herdr itself accepts', () => {
+    expect(parseHerdrSessions('default,work.box_2')).toEqual(['default', 'work.box_2'])
+  })
+
+  it.each(['has space', '../escape', '-leading', 'a'.repeat(65)])('rejects invalid HERDR_SESSIONS=%j', (value) => {
+    expect(() => parseHerdrSessions(value)).toThrow(/HERDR_SESSIONS/)
   })
 })

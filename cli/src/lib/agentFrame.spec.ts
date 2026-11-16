@@ -162,6 +162,25 @@ describe('agentFrame', () => {
     expect(frame).toHaveProperty('codexHome', null)
   })
 
+  it("always carries the workspace level of the rail, herdr's own for a herdr pane", async () => {
+    // A tmux row: grouped by the folder it works in, so a client can draw the same two levels.
+    expect(await agentFrame(session(null), { selectedModel: null, terminalAvailable: true }))
+      .toMatchObject({ rail: { kind: 'folder', id: '/tmp', label: 'tmp', order: null, cwd: '/tmp' } })
+    // A herdr row: the workspace id is the pane id's prefix, even before the sidebar has been read.
+    const herdr = {
+      ...session(null),
+      runtimes: [{ backend: 'herdr' as const, endpointId: 'e1', sessionName: 'default', terminalId: 't1', paneId: 'wB:p1' }],
+      primaryRuntimeKey: 'herdr/e1/wB:p1',
+    }
+    expect(await agentFrame(herdr, { selectedModel: null, terminalAvailable: true }))
+      .toMatchObject({ rail: { kind: 'herdr', id: 'wB', label: null, order: null } })
+    // The caller that can read Herdr's sidebar passes its one answer, label and sidebar order included.
+    expect(await agentFrame(herdr, {
+      selectedModel: null, terminalAvailable: true,
+      rail: { kind: 'herdr', id: 'wB', label: 'others', order: 8, cwd: '/tmp' },
+    })).toMatchObject({ rail: { label: 'others', order: 8 } })
+  })
+
   it('passes through the caller-resolved model and terminal availability', async () => {
     expect(await agentFrame(session(null), { selectedModel: 'opus', terminalAvailable: false }))
       .toMatchObject({ selectedModel: 'opus', terminal: { available: false, primary: 'tmux/%1' } })

@@ -1,6 +1,6 @@
 import type { AgentEngine } from '../engines/types.js'
 
-export type TerminalBackendName = 'tmux' | 'ptyhost'
+export type TerminalBackendName = 'tmux' | 'ptyhost' | 'herdr'
 
 /** PID reuse-safe identity for the process that owns a Harness agent. */
 export interface ProcessIdentity {
@@ -29,10 +29,24 @@ export interface PtyRuntimeRef {
   instance: string
 }
 
-export type TerminalRuntimeRef = TmuxRuntimeRef | PtyRuntimeRef
+export interface HerdrRuntimeRef {
+  backend: 'herdr'
+  /** Stable configured-target identifier. Never contains the socket path. */
+  endpointId: string
+  sessionName: string
+  /** Stable within one Herdr endpoint, including across pane moves. */
+  terminalId: string
+  /** Mutable public route, scoped to endpointId. */
+  paneId: string
+}
+
+export type TerminalRuntimeRef = TmuxRuntimeRef | PtyRuntimeRef | HerdrRuntimeRef
 
 /** Untrusted route hints from hooks. */
-export type HookTerminalHint = { backend: 'tmux'; paneId: string } | { backend: 'ptyhost'; paneId: string; instance: string }
+export type HookTerminalHint =
+  | { backend: 'tmux'; paneId: string }
+  | { backend: 'ptyhost'; paneId: string; instance: string }
+  | { backend: 'herdr'; paneId: string; sessionName?: string; socketPath?: string }
 
 export interface TerminalRootObservation {
   runtime: TerminalRuntimeRef
@@ -119,6 +133,14 @@ export interface TerminalCreateRequest extends TerminalDispatchControl {
    * `gridLaunch.ts`), and argv is world-readable through `ps` for as long as the process lives.
    */
   env?: Record<string, string>
+  /**
+   * The folder and the name of the WORKSPACE this pane belongs to, when the backend's own interface shows one
+   * (a Herdr workspace in Herdr's sidebar). `cwd` above stays the login shell's start folder, which
+   * `createAgentPane` keeps stable on purpose; a backend with no workspace of its own (tmux, the pty host)
+   * ignores both, and tmux keeps using `label` for its discovery whitelist.
+   */
+  workspaceCwd?: string
+  workspaceLabel?: string
   /** What the pane runs when `command` exits by itself (`TerminalAfterExit`); the pty host's alone. */
   afterExit?: TerminalAfterExit
   /** Scrollback the new pane starts with (hostMove/seed.ts); the pty host's alone, and only one that lists the `seed`

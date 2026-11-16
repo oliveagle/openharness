@@ -219,6 +219,17 @@ export function cloudAgentFrame(harness: CloudHarness): CloudAgentFrame {
     tokenUsage: null,
     outputStats: null,
     tmuxPane: null,
+    // A cloud harness has no pane on this machine: its workspace is the repository it works in, so every
+    // client groups the cloud agents together under the same two levels a local one has.
+    // A cloud harness has no pane on this machine: its workspace is the repository it works in, so the
+    // same two levels hold for it (agentRail.ts).
+    rail: {
+      kind: 'folder' as const,
+      id: `cloud:${harness.repository ?? harness.agentId}`,
+      label: harness.repository ?? harness.name,
+      order: null,
+      cwd: null,
+    },
     terminal: { available: false, primary: '', runtimes: [] },
     engine: harness.agent,
     selectedModel: null,

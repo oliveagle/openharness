@@ -87,6 +87,14 @@ import { openclawStateDir } from '../lib/openclawStore.js'
 import { processSessionOf } from '../engines/sessionStores.js'
 import { createHandoffDependencies } from './handoffDependencies.js'
 import { TmuxBackend } from '../lib/tmuxBackend.js'
+import { HerdrBackend } from '../lib/herdrBackend.js'
+import {
+  discoverRunningHerdrSessions,
+  herdrBinaryAvailable,
+  listInstalledHerdrSessions,
+  resolveConfiguredHerdrSessions,
+  type HerdrTargetResolution,
+} from '../lib/herdrSessions.js'
 import { tmuxAvailableNow } from '../lib/tmuxOnPath.js'
 import { createTerminalBackendRecovery } from '../lib/terminalBackendRecovery.js'
 import { isDrainBackend, ptyHostBackends, ptyHostOnProbation, PtyHostDrain, rowInstancesOf, rowsOnInstance, untilHostAttached, withoutCreateHost } from '../lib/ptyHost/drain.js'
@@ -125,9 +133,11 @@ import { argvTokens, processRows } from '../lib/processTable.js'
 import { defaultTerminalBackends } from '../config/terminalConfig.js'
 import { prepareTerminalBackends, TerminalBackendCoordinator } from '../lib/terminalBackendCoordinator.js'
 import { canRestart, heldIn, noBackendCode, type TerminalBackend } from '../lib/terminalBackend.js'
+import type { TerminalBackendName } from '../lib/terminalTypes.js'
 import { handoffAgentId } from '../lib/terminalHandoff.js'
 import { TerminalStreamManager } from '../lib/terminalStreamManager.js'
 import { ownedPanesOf, primaryRuntime, terminalRouteKey, terminalRuntimeLabel } from '../lib/terminalRuntime.js'
+import { railRefFor, type HerdrWorkspaceIndex } from '../lib/agentRail.js'
 import { probeTerminalAgents } from '../lib/terminalAgentDiscovery.js'
 import { RECONCILE_PASS_DEADLINE_MS, TerminalAgentReconciler } from '../lib/terminalAgentReconciler.js'
 import { Watcher } from '../watcher/watcher.js'
@@ -449,6 +459,9 @@ let usagePortRef: UsageSnapshots | null = null
 
 /** Set by runForeground once models can be asked: what an agent's frame says of its grid. */
 let gridAnnotationRef: ((grid: AgentGridTarget) => GridAnnotation | null) | null = null
+/** Set by runForeground once the terminal backends exist: the machine's rail (lib/agentRail.ts), read from
+ *  Herdr's own sidebar for a Herdr pane and from the agent's folder otherwise. */
+let railLookupRef: ((endpointId: string) => HerdrWorkspaceIndex | null) | null = null
 
 function projectFrame(s: RegisteredSession, selectedModel: string | null, workspace: string | null): Promise<AgentFrame> {
   return agentFrame(s, {
@@ -460,6 +473,7 @@ function projectFrame(s: RegisteredSession, selectedModel: string | null, worksp
     activity: () => activityFrameContextRef?.(s) ?? null,
     waitingFor: () => waitingForRef?.(s) ?? null,
     gridAnnotation: (grid) => gridAnnotationRef?.(grid) ?? null,
+    rail: railLookupRef ? railRefFor(s, railLookupRef) : null,
     browser: browserFrameRef?.(s.agentId),
   })
 }
@@ -608,12 +622,18 @@ async function runForeground(session: AuthSession | null): Promise<void> {
   await registry.transaction(() => {
     for (const session of registry.list()) registry.setActive(session.agentId, false)
   })
-  // Unset means AUTO: watch this platform's default backend, ptyhost on Windows and tmux elsewhere (see
-  // config/terminalConfig.ts). `parseTerminalBackends` drops a retired `herdr` still named in someone's
-  // environment rather than refusing to boot on it.
+  // Unset means AUTO: this platform's default backend (ptyhost on Windows, tmux elsewhere) plus Herdr
+  // when this machine has it (config/terminalConfig.ts). Herdr comes FIRST on purpose: every agent this
+  // daemon makes is then a real Herdr workspace, so the person can attach to it from the Herdr app and
+  // watch the same pane Harness drives. tmux stays behind it as the fallback when Herdr cannot be
+  // reached, so a machine with a broken Herdr still runs agents.
   const backendsExplicit = env.TERMINAL_BACKENDS !== undefined
+  const herdrInstalled = process.platform !== 'win32' && herdrBinaryAvailable(env.HERDR_BIN)
+  const autoBackends: TerminalBackendName[] = herdrInstalled
+    ? ['herdr', ...defaultTerminalBackends(process.platform)]
+    : defaultTerminalBackends(process.platform)
   const terminalConfig = {
-    backends: env.TERMINAL_BACKENDS ?? defaultTerminalBackends(process.platform),
+    backends: env.TERMINAL_BACKENDS ?? autoBackends,
   }
   // The desktop's pane colours, for tmux's `window-style` (lib/hostTheme.ts): the last ones the app
   // sent, or its stock dark palette until it says otherwise. Read through a closure so a change
@@ -624,6 +644,24 @@ async function runForeground(session: AuthSession | null): Promise<void> {
   // STATE the daemon runs on without, never a reason to refuse to start: it still serves its status, the
   // local socket and the backend link, leaves for an update, and says what is missing.
   const candidates: TerminalBackend[] = []
+  // Herdr first: the sessions it serves are the ones this machine's person already has open. Named
+  // sessions come from HERDR_SESSIONS; unset means every running Herdr session, discovered by
+  // `herdr session list --json` — the default session in the terminal is one of them, so an agent
+  // started here shows up in the Herdr app without any setup.
+  const herdrTargets: HerdrTargetResolution[] = terminalConfig.backends.includes('herdr')
+    ? (env.HERDR_SESSIONS
+      ? await resolveConfiguredHerdrSessions(env.HERDR_SESSIONS, () => listInstalledHerdrSessions(env.HERDR_BIN))
+      : await discoverRunningHerdrSessions(env.HERDR_BIN))
+    : []
+  const herdrBackends = herdrTargets.flatMap((target) => target.state === 'available' ? [new HerdrBackend(target.endpoint)] : [])
+  for (const target of herdrTargets) {
+    if (target.state === 'available') console.log(`[terminal] herdr session ${target.sessionName}: available`)
+    else console.log(`[terminal] herdr session ${target.sessionName}: ${target.state} (${target.reason})`)
+  }
+  // Herdr's sidebar is the workspace level of every client's rail: the workspace ids, labels
+  // and sidebar order come from the backend that owns the pane.
+  railLookupRef = (endpointId) => herdrBackends.find((backend) => backend.endpoint.endpointId === endpointId)?.workspaceIndex() ?? null
+  candidates.push(...herdrBackends)
   const configuredTmux = terminalConfig.backends.includes('tmux') ? new TmuxBackend(() => hostTheme) : null
   if (configuredTmux) candidates.push(configuredTmux)
   // The Harness PTY host (pty/): reached, or started detached so its panes outlive this daemon. New panes go to the
@@ -1884,6 +1922,7 @@ async function runForeground(session: AuthSession | null): Promise<void> {
 
   backend.runtimeProfileProvider = (session) => runtimeProfiles.selectedModel(session)
   backend.workspaceProvider = (session) => runtimeProfiles.workspace(session)
+  backend.railProvider = (session) => railRefFor(session, railLookupRef)
   backend.dshFrameProvider = (s) => ports.viewers?.frameContext(s) ?? null
   // `harness remote` names the tile it was typed in by its pane; the registry knows whose it is (lib/terminalHandoff.ts).
   backend.onTerminalHandoff = (pane) => handoffAgentId(registry.advertised(), pane)
@@ -2213,7 +2252,7 @@ async function runForeground(session: AuthSession | null): Promise<void> {
     mirror,
   })
   // Which agent a hook belongs to, and what a SessionEnd means (core/engines/hooks.ts).
-  const engineHooks = createEngineHooks({ get tmuxBackend() { return tmuxBackend }, ptyHostBackend, agentReconciler, registry, panePending: restorePanes.pending, syncSession })
+  const engineHooks = createEngineHooks({ get tmuxBackend() { return tmuxBackend }, ptyHostBackend, herdrBackends, agentReconciler, registry, panePending: restorePanes.pending, syncSession })
   // What agents may do: the account's experiments, kept in this daemon's data folder for its launches
   // (lib/agentSettings.ts, core/experiments.ts). Started once bound, below.
   const agentSettings = createAgentSettingsSync({ dataDir: env.ADAPTER_DATA_DIR, backend: proxyBackend, session: readAuthSession,

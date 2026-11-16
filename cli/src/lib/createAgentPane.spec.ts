@@ -68,7 +68,7 @@ describe('createAndRegisterPane', () => {
       spawnCwd: '/work/project with spaces', sessionLabel: 'harness-shell-1', argv,
     })
     expect(result.ok).toBe(true)
-    expect(tmuxBackend.create).toHaveBeenCalledWith({ label: 'harness-shell-1', cwd: '/work/project with spaces', command: argv })
+    expect(tmuxBackend.create).toHaveBeenCalledWith({ label: 'harness-shell-1', cwd: '/work/project with spaces', workspaceCwd: '/work/project with spaces', command: argv })
   })
 
   it('starts a Windows engine in its workspace with its hand-off, and an explicit folder still wins', async () => {
@@ -78,12 +78,12 @@ describe('createAndRegisterPane', () => {
     const afterExit = { command: ['pwsh.exe', '-NoLogo'], env: { HARNESS_ENGINE_COMMAND: 'claude' } }
     await createAndRegisterPane({ tmuxBackend, registry, engine: 'claude', cwd: 'C:\\work', sessionLabel: 'harness-claude-1', argv: ['claude.exe'],
       paneLaunch: { cwd: 'C:\\work', afterExit, clearInherited: ['ANTHROPIC_API_KEY'] } })
-    expect(tmuxBackend.create).toHaveBeenLastCalledWith({ label: 'harness-claude-1', cwd: 'C:\\work', command: ['claude.exe'], afterExit, clearInherited: ['ANTHROPIC_API_KEY'] })
+    expect(tmuxBackend.create).toHaveBeenLastCalledWith({ label: 'harness-claude-1', cwd: 'C:\\work', workspaceCwd: 'C:\\work', command: ['claude.exe'], afterExit, clearInherited: ['ANTHROPIC_API_KEY'] })
     await createAndRegisterPane({ tmuxBackend, registry, engine: 'claude', cwd: '/w', spawnCwd: '/elsewhere', sessionLabel: 'harness-claude-2', argv: ['claude'],
       paneLaunch: { cwd: '/w' } })
-    expect(tmuxBackend.create).toHaveBeenLastCalledWith({ label: 'harness-claude-2', cwd: '/elsewhere', command: ['claude'] })
+    expect(tmuxBackend.create).toHaveBeenLastCalledWith({ label: 'harness-claude-2', cwd: '/elsewhere', workspaceCwd: '/w', command: ['claude'] })
     await createAndRegisterPane({ tmuxBackend, registry, engine: 'claude', cwd: '/w', sessionLabel: 'harness-claude-3', argv: ['claude'], paneLaunch: {} })
-    expect(tmuxBackend.create).toHaveBeenLastCalledWith({ label: 'harness-claude-3', cwd: homedir(), command: ['claude'] })
+    expect(tmuxBackend.create).toHaveBeenLastCalledWith({ label: 'harness-claude-3', cwd: homedir(), workspaceCwd: '/w', command: ['claude'] })
   })
 
   it('retries past a stale registration collision and succeeds on the next pane', async () => {

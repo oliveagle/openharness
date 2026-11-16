@@ -169,7 +169,7 @@ export function terminalTargetOf<B>(
 }
 
 /** The code a backend that is not there answers creates, restores and resumes with. */
-export const TERMINAL_UNAVAILABLE_CODE: Record<TerminalBackendName, string> = { tmux: 'TMUX_UNAVAILABLE', ptyhost: 'PTY_HOST_UNAVAILABLE' }
+export const TERMINAL_UNAVAILABLE_CODE: Record<TerminalBackendName, string> = { tmux: 'TMUX_UNAVAILABLE', ptyhost: 'PTY_HOST_UNAVAILABLE', herdr: 'HERDR_UNAVAILABLE' }
 
 /**
  * What a row none of whose runtimes is on a backend here answers (`terminalTargetOf` undefined): the backend it would

@@ -26,6 +26,7 @@ import { join } from 'path'
 import { hostname } from 'os'
 import { env } from './config/env.js'
 import { registry, projectDisplayName, type RegisteredSession } from './lib/registry.js'
+import type { AgentRailRef } from './lib/agentRail.js'
 import type { CloseAgentService } from './lib/closeAgentService.js'
 import type { AgentEngine } from './engines/types.js'
 import { gridCliPresence } from './lib/gridBinary.js'
@@ -347,6 +348,9 @@ export class BackendSocket {
   runtimeProfileProvider: ((session: RegisteredSession) => string | null) | null = null
   /** The engine's own workspace, when its tools do not run in the pane's folder (OpenClaw's). */
   workspaceProvider: ((session: RegisteredSession) => string | null) | null = null
+  /** Where the agent sits in the machine's two levels (lib/agentRail.ts): Herdr's workspace, or its folder.
+   *  Null: the frame derives it from the row alone. */
+  railProvider: ((session: RegisteredSession) => AgentRailRef | null) | null = null
   /** Backend-resolved machine id, persisted by the SSO login preflight. */
   readonly machineId: string
 
@@ -1446,7 +1450,7 @@ export class BackendSocket {
 
   /** A stopped agent's frame: no pane, no terminal, nothing to fork. */
   async toStoppedProject(s: RegisteredSession): Promise<AgentFrame> {
-    const frame = await agentFrame(s, { selectedModel: s.model, terminalAvailable: false, dsh: this.dshFrameProvider?.(s) ?? null,
+    const frame = await agentFrame(s, { selectedModel: s.model, terminalAvailable: false, rail: this.railProvider?.(s) ?? null, dsh: this.dshFrameProvider?.(s) ?? null,
       tokenUsage: this.tokenUsageProvider?.(s) ?? null, gridAnnotation: this.gridAnnotation, browser: this.browserFrameProvider?.(s.agentId) })
     return {
       ...frame,
@@ -1464,6 +1468,7 @@ export class BackendSocket {
       tokenUsage: this.tokenUsageProvider?.(s) ?? null,
       selectedModel: this.runtimeProfileProvider?.(s) ?? null,
       workspace: this.workspaceProvider?.(s) ?? null,
+      rail: this.railProvider?.(s) ?? null,
       terminalAvailable: registry.terminalAvailable(s.agentId),
       dsh: this.dshFrameProvider?.(s) ?? null,
       activity: () => this.activityFrameProvider?.(s) ?? null,

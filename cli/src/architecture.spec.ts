@@ -595,6 +595,7 @@ describe('the daemon\'s shape', () => {
       'core/main.ts': 'listens: the daemon\'s local HTTP server, on loopback and its private socket',
       'hookServer.ts': 'listens: the engines\' hooks, on this computer',
       'lib/localSocket.ts': 'the daemon\'s own Unix socket, to ask whether a daemon serves here already',
+      'lib/herdrApiClient.ts': 'the Herdr session socket on this computer (a Herdr workspace manager, one socket per session)',
       'lib/loopbackGet.ts': 'a GET to this computer\'s loopback alone',
       'lib/ptyHost/client.ts': 'the Windows terminal host\'s pipe on this computer',
       'lib/ptyHost/launch.ts': 'the Windows terminal host\'s pipe on this computer',

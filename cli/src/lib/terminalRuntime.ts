@@ -4,6 +4,13 @@ import type { ProcessIdentity, TerminalBackendName, TerminalRuntimeRef } from '.
 
 const SEP = '\u0000'
 
+/**
+ * A Herdr pane route (`w<workspace>:p<pane>`), as `herdr pane list` prints it. Both halves are Herdr's
+ * own counters written in base 36 — `w1:p1` beside `w3:pY`, `w7:pK` and `wN:p1` on one machine — so
+ * digits alone rejected every pane made after the tenth, and every workspace after the ninth.
+ */
+export const HERDR_PANE = /^w[0-9A-Za-z]{1,9}:p[0-9A-Za-z]{1,9}$/
+
 function assertKeyPart(value: string, field: string): string {
   if (!value || value.includes(SEP)) throw new Error(`invalid ${field}`)
   return value
@@ -28,19 +35,23 @@ export function ownedPanesOf(
 /** Stable route key. A ptyhost pane id is only unique within its host instance, so the instance is part of it. */
 export function terminalRouteKey(runtime: TerminalRuntimeRef): string {
   const pane = assertKeyPart(runtime.paneId, 'pane id')
-  return runtime.backend === 'tmux'
-    ? `tmux${SEP}${pane}`
-    : `ptyhost${SEP}${assertKeyPart(runtime.instance, 'pty host instance')}${SEP}${pane}`
+  if (runtime.backend === 'tmux') return `tmux${SEP}${pane}`
+  if (runtime.backend === 'ptyhost') return `ptyhost${SEP}${assertKeyPart(runtime.instance, 'pty host instance')}${SEP}${pane}`
+  return `herdr${SEP}${assertKeyPart(runtime.endpointId, 'Herdr endpoint id')}${SEP}${pane}`
 }
 
 /** The backend instance that holds [runtime]: `<backend>:<instance>`, as `TerminalBackend.instanceId`. */
 export function terminalInstanceId(runtime: TerminalRuntimeRef): string {
-  return runtime.backend === 'tmux' ? 'tmux:default' : `ptyhost:${runtime.instance}`
+  if (runtime.backend === 'tmux') return 'tmux:default'
+  if (runtime.backend === 'ptyhost') return `ptyhost:${runtime.instance}`
+  return `herdr:${assertKeyPart(runtime.endpointId, 'Herdr endpoint id')}`
 }
 
-/** Human-readable locator label for status and logs. */
+/** Human-readable locator label for status and logs. It never contains a Herdr socket path. */
 export function terminalRuntimeLabel(runtime: TerminalRuntimeRef): string {
-  return runtime.backend === 'tmux' ? `tmux:${runtime.paneId}` : `ptyhost:${runtime.instance}:${runtime.paneId}`
+  if (runtime.backend === 'tmux') return `tmux:${runtime.paneId}`
+  if (runtime.backend === 'ptyhost') return `ptyhost:${runtime.instance}:${runtime.paneId}`
+  return `herdr:${runtime.sessionName}:${runtime.paneId}`
 }
 
 /**
@@ -59,11 +70,16 @@ export function primaryRuntime(session: { readonly runtimes: readonly TerminalRu
 export function sessionForPaneId<S extends { readonly runtimes: readonly TerminalRuntimeRef[] }>(sessions: readonly S[], pane: string): S | undefined {
   const pty = PTY_HOST_PANE.exec(pane)
   if (pty) return sessions.find((session) => session.runtimes.some((runtime) => runtime.backend === 'ptyhost' && runtime.instance === pty[1] && runtime.paneId === pty[2]))
+  const herdr = HERDR_PANE.exec(pane)
+  if (herdr) return sessions.find((session) => session.runtimes.some((runtime) => runtime.backend === 'herdr' && runtime.paneId === pane))
   return sessions.find((session) => session.runtimes.some((runtime) => runtime.backend === 'tmux' && runtime.paneId === pane))
 }
 
-/** Stable placement key. For tmux the pane id is both the route and the placement identity. */
+/** Stable placement key. A Herdr pane move keeps this key because terminal_id is the placement identity. */
 export function terminalPlacementKey(runtime: TerminalRuntimeRef): string {
+  if (runtime.backend === 'herdr') {
+    return `herdr${SEP}${assertKeyPart(runtime.endpointId, 'Herdr endpoint id')}${SEP}${assertKeyPart(runtime.terminalId, 'Herdr terminal id')}`
+  }
   return terminalRouteKey(runtime)
 }
 

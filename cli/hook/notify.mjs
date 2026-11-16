@@ -791,10 +791,26 @@ function ptyHostPane(environment = process.env) {
 }
 const PTY_PANE = ptyHostPane()
 
+/**
+ * A Herdr pane names itself `HERDR_PANE_ID=w<workspace>:p<pane>`, and its socket `HERDR_SOCKET_PATH`. It is
+ * read only when there is no TMUX_PANE and no pty host pane: a tmux pane inside a Herdr pane is still the
+ * tmux pane. The socket is a lookup hint for the daemon, never authority to open one.
+ */
+function herdrPane(environment = process.env) {
+  if (environment.TMUX_PANE || environment.HARNESS_PANE) return null
+  const paneId = environment.HERDR_PANE_ID || ''
+  // Herdr's counters are base 36: `w1:p1` and `w7:pK` are both real pane ids.
+  if (!/^w[0-9A-Za-z]{1,9}:p[0-9A-Za-z]{1,9}$/.test(paneId)) return null
+  const socketPath = environment.HERDR_SOCKET_PATH || ''
+  return { paneId, ...(socketPath ? { socketPath } : {}) }
+}
+const HERDR_PANE = herdrPane()
+
 function terminalHookFields(tmuxPane) {
   const runtimeHints = []
   if (tmuxPane) runtimeHints.push({ backend: 'tmux', paneId: tmuxPane })
   else if (PTY_PANE) runtimeHints.push({ backend: 'ptyhost', instance: PTY_PANE.instance, paneId: PTY_PANE.paneId })
+  else if (HERDR_PANE) runtimeHints.push({ backend: 'herdr', paneId: HERDR_PANE.paneId, ...(HERDR_PANE.socketPath ? { socketPath: HERDR_PANE.socketPath } : {}) })
   return { tmuxPane, runtimeHints, callerPid: process.ppid }
 }
 

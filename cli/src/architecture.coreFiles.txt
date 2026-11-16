@@ -296,6 +296,7 @@ lib/agentEvent.ts
 lib/agentFrame.ts
 lib/agentNames.ts
 lib/agentProject.ts
+lib/agentRail.ts
 lib/agentSessionEnv.ts
 lib/agentSettings.ts
 lib/agentTmp.ts
@@ -367,6 +368,9 @@ lib/harnessDefaults.ts
 lib/harnessMonitor.ts
 lib/harnessSessionLabel.ts
 lib/harnessdEnv.ts
+lib/herdrApiClient.ts
+lib/herdrBackend.ts
+lib/herdrSessions.ts
 lib/historyRewrap.ts
 lib/hookAuth.ts
 lib/hookRoutes.ts

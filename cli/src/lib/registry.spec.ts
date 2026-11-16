@@ -5,6 +5,7 @@ import { join } from 'path'
 import { processLockIdentity, processStartMarker } from './processLiveness.js'
 import type { AgentEngine } from '../engines/types.js'
 import type { ProcessIdentity, RegisteredSession, RegisterInput } from './registry.js'
+import type { HerdrRuntimeRef } from './terminalTypes.js'
 
 let dataDir = ''
 
@@ -651,31 +652,49 @@ describe('registry remote display names', () => {
     expect(validTerminalRuntime({ backend: 'ptyhost', instance: 'p3', paneId: 'w1:p1' })).toBe(false)
   })
 
-  it('drops runtimes a retired Herdr backend left on disk, and agents left with none', async () => {
+  // Herdr is a backend again (2026-11-15). A saved Herdr runtime is a runtime like any other: it sorts by
+  // placement (`herdr\0…` before `tmux\0…`), so it becomes the row's primary and its pane is projected onto
+  // the legacy `tmuxPane` field, and it is still there after a reload.
+  it('keeps a saved Herdr runtime across a reload, and projects its pane', async () => {
     const { registry } = await loadRegistryModule()
     registry.load()
     registry.openProcessAgent({ agentId: 'mixed', engine: 'claude', tmuxPane: '%40', processIdentity: processIdentity(940) })
     const [row] = JSON.parse(readFileSync(join(dataDir, 'registry.json'), 'utf8'))
-    const herdr = { backend: 'herdr', endpointId: 'herdr:default:abc', sessionName: 'default', terminalId: 'terminal-1', paneId: 'w1:p1' }
+    const herdr: HerdrRuntimeRef = { backend: 'herdr', endpointId: 'herdr:default:abc', sessionName: 'default', terminalId: 'terminal-1', paneId: 'w1:p1' }
     const herdrKey = 'herdr\u0000herdr:default:abc\u0000w1:p1'
-    const { tmuxPane: _pane, ...herdrOnly } = row
     writeFileSync(join(dataDir, 'registry.json'), JSON.stringify([
-      { ...row, runtimes: [...row.runtimes, herdr], primaryRuntimeKey: herdrKey },
-      { ...herdrOnly, agentId: 'herdr-only', sessionId: '', processIdentity: null, runtimes: [herdr], primaryRuntimeKey: herdrKey },
+      { ...row, tmuxPane: 'w1:p1', runtimes: [...row.runtimes, herdr], primaryRuntimeKey: herdrKey },
     ]), { mode: 0o600 })
 
     const { registry: reloaded } = await loadRegistryModule()
     reloaded.load()
 
-    expect(reloaded.byAgent('mixed')?.runtimes).toEqual([{ backend: 'tmux', paneId: '%40' }])
-    expect(reloaded.byAgent('mixed')?.primaryRuntimeKey).toBe('tmux\u0000%40')
-    expect(reloaded.byAgent('herdr-only')).toBeUndefined()
-    const persisted = JSON.parse(readFileSync(join(dataDir, 'registry.json'), 'utf8'))
-    expect(persisted.map((entry: { agentId: string }) => entry.agentId)).toEqual(['mixed'])
-    expect(JSON.stringify(persisted)).not.toContain('herdr')
-    // Still writable: nothing about the retired rows blocked the file.
-    reloaded.openProcessAgent({ agentId: 'after', engine: 'claude', tmuxPane: '%41', processIdentity: processIdentity(941) })
-    expect(JSON.parse(readFileSync(join(dataDir, 'registry.json'), 'utf8'))).toHaveLength(2)
+    const saved = reloaded.byAgent('mixed')!
+    expect(saved.runtimes).toEqual([herdr, { backend: 'tmux', paneId: '%40' }])
+    expect(saved.primaryRuntimeKey).toBe(herdrKey)
+    expect(saved.tmuxPane).toBe('w1:p1')
+    // The runtime index a Herdr hint resolves through (waiter lookups, hook binding), not the tmux-only one.
+    expect(reloaded.byRuntimeEngine(herdr, 'claude')?.agentId).toBe('mixed')
+    expect(JSON.parse(readFileSync(join(dataDir, 'registry.json'), 'utf8'))[0].runtimes).toEqual([herdr, { backend: 'tmux', paneId: '%40' }])
+  })
+
+  it('validates a Herdr runtime by its own pane shape and identity fields', async () => {
+    const { validTerminalRuntime } = await loadRegistryModule()
+    const herdr: HerdrRuntimeRef = { backend: 'herdr', endpointId: 'herdr:default:abc', sessionName: 'default', terminalId: 'terminal-1', paneId: 'w12:p3' }
+    const at = (paneId: string): HerdrRuntimeRef => ({ ...herdr, paneId })
+    const broken = (fields: Record<string, unknown>): unknown => ({ ...herdr, ...fields })
+
+    expect(validTerminalRuntime(herdr)).toBe(true)
+    // Herdr's counters are base 36, so a real pane is often `w3:pY` or `w7:pK`, not a digit pair.
+    expect(validTerminalRuntime(at('w3:pY'))).toBe(true)
+    expect(validTerminalRuntime(at('wN:p1'))).toBe(true)
+    // A Herdr pane is `w<n>:p<n>`: a tmux `%N` is another backend's pane, not this one's.
+    expect(validTerminalRuntime(at('%1'))).toBe(false)
+    expect(validTerminalRuntime(at('w1'))).toBe(false)
+    expect(validTerminalRuntime(broken({ endpointId: '' }))).toBe(false)
+    expect(validTerminalRuntime(broken({ terminalId: undefined }))).toBe(false)
+    expect(validTerminalRuntime(broken({ sessionName: 7 }))).toBe(false)
+    expect(validTerminalRuntime({ backend: 'tmux', paneId: 'w1:p1' })).toBe(false)
   })
 
   // Swarm v3 (task #4215): until then Harness itself started every Swarm agent in full mode, and an older Buddy in `buddy` or

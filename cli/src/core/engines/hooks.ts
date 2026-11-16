@@ -21,6 +21,8 @@ import { hermesGatewayProcess, type ProcessRow } from '../../lib/processTable.js
 import { sameProcessIdentity } from '../../lib/terminalRuntime.js'
 import type { TerminalAgentReconciler } from '../../lib/terminalAgentReconciler.js'
 import type { TerminalRuntimeRef } from '../../lib/terminalTypes.js'
+import type { HerdrBackend } from '../../lib/herdrBackend.js'
+import { herdrHintSelects } from '../../lib/herdrSessions.js'
 
 type ResolveHookAgent = NonNullable<HookServerHandlers['resolveHookAgent']>
 
@@ -31,6 +33,8 @@ export interface EngineHookDeps {
   tmuxBackend: unknown
   /** A ptyhost hint names a pane of the Harness PTY host; without that backend there is nothing it can point at. */
   ptyHostBackend?: unknown
+  /** The Herdr backends this daemon drives; a herdr hint names a pane of one of them. */
+  herdrBackends?: readonly HerdrBackend[]
   agentReconciler: Pick<TerminalAgentReconciler, 'triggerHint' | 'trigger'>
   registry: Pick<typeof registry, 'byRuntimeEngine' | 'byAgent'>
   syncSession: (row: RegisteredSession) => void
@@ -149,7 +153,16 @@ export function createEngineHooks(deps: EngineHookDeps) {
     const resolved: TerminalRuntimeRef[] = []
     for (const hint of runtimeHints ?? []) {
       if (hint.backend === 'tmux') { if (deps.tmuxBackend) resolved.push({ backend: 'tmux', paneId: hint.paneId }) }
-      else {
+      else if (hint.backend === 'herdr') {
+        // A Herdr pane names itself `HERDR_PANE_ID`; the daemon answers it only for a session it resolved
+        // itself, and only through the pane's own terminal id — the endpoint is the socket the shell named.
+        const backend = (deps.herdrBackends ?? []).find((candidate) => herdrHintSelects(candidate.endpoint, hint))
+          ?? ((deps.herdrBackends ?? []).length === 1 ? deps.herdrBackends![0] : undefined)
+        if (!backend) continue
+        const pane = await backend.resolveRuntimeHint(hint.paneId)
+        if (pane.state === 'succeeded') resolved.push(pane.value)
+      }
+      else if (hint.backend === 'ptyhost') {
         // Held to the registry's own rule for a ptyhost runtime (`p<n>` instance, `%<n>` pane): a hint that is
         // not one is ignored, as a hint for a backend that is not configured is.
         const runtime = { backend: 'ptyhost' as const, instance: hint.instance, paneId: hint.paneId }

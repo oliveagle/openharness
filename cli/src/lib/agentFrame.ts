@@ -1,4 +1,5 @@
 import type { ActivityFrame } from './turnActivity.js'
+import { railRefFor, type AgentRailRef } from './agentRail.js'
 /**
  * The one shape an agent takes on the wire.
  *
@@ -92,6 +93,15 @@ export type AgentFrame = {
   outputStats: (AgentOutputStats & { updatedAt: string }) | null
   tmuxPane: string | null
   terminal: { available: boolean; primary: string; runtimes: RegisteredSession['runtimes'] }
+  /**
+   * Where the agent sits in the machine's two levels (agentRail.ts): the workspace it is grouped under.
+   * The second level — the pane — is `terminal.runtimes[].paneId`, which is what a client opens.
+   *
+   * Every client draws these two: the shell in Herdr's own sidebar, the web as a tree, the phone as a
+   * drawer. Herdr's workspaces are the person's own, so the daemon reports Herdr's id, label and order
+   * rather than inventing a folder grouping for them; everything else is grouped by folder.
+   */
+  rail: AgentRailRef
   engine: RegisteredSession['engine']
   selectedModel: string | null
   /** The folder the engine's own tools run in when it is not the pane's (OpenClaw's workspace); absent when none. */
@@ -201,6 +211,9 @@ export interface AgentFrameContext {
   waitingFor?: () => 'engine' | null
   /** The agent's browser; absent for an agent without one, and then the frame has no `browser`. */
   browser?: AgentBrowserFrame
+  /** The workspace level for this agent, when the caller can read Herdr's sidebar (main.ts). Absent: derived
+   *  from the row alone — a Herdr agent still gets its workspace id, and waits for its label. */
+  rail?: AgentRailRef | null
 }
 
 /**
@@ -242,7 +255,7 @@ const NAMED_STATES = new Set<string>([...Object.values(OPENCLAW_STATES), ...Obje
 
 export async function agentFrame(
   s: RegisteredSession,
-  { selectedModel, workspace, terminalAvailable, dsh, tokenUsage, activity: contextActivity, gridAnnotation, waitingFor, browser }: AgentFrameContext,
+  { selectedModel, workspace, terminalAvailable, dsh, tokenUsage, activity: contextActivity, gridAnnotation, waitingFor, browser, rail }: AgentFrameContext,
 ): Promise<AgentFrame> {
   // The git context is git's own display projection and keeps reading git directly; the frame's
   // `project` goes through the SCM seam. Both resolve through agentProject's shared reader, so the
@@ -283,6 +296,7 @@ export async function agentFrame(
     outputStats: tokenUsage?.output ? { ...tokenUsage.output, updatedAt: tokenUsage.updatedAt } : null,
     tmuxPane: s.tmuxPane || null,
     terminal: { available: terminalAvailable, primary: s.primaryRuntimeKey, runtimes: s.runtimes },
+    rail: rail ?? railRefFor(s),
     engine: s.engine,
     selectedModel,
     // A label for OpenClaw, whose tools run in its own workspace rather than the pane's folder. Absent means no

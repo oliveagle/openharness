@@ -127,7 +127,9 @@ describe('process-owned hook server', () => {
     expect(handlers.onRegistered).not.toHaveBeenCalled()
   })
 
-  it('accepts a Herdr hint from a hook installed by an earlier build, and resolves by its tmux pane only', async () => {
+  // A hook reports every terminal it is in. Herdr is a backend again (2026-11-15), so its hint is kept
+  // beside the tmux one and the agent can bind through either pane.
+  it('keeps a Herdr hint a hook reports beside its tmux pane', async () => {
     const resolveHookAgent = vi.fn(async () => null)
     const { base, headers } = await start({ resolveHookAgent })
     const response = await fetch(`${base}/api/hook/session-start`, {
@@ -146,7 +148,11 @@ describe('process-owned hook server', () => {
 
     expect(response.status).toBe(200)
     expect(resolveHookAgent).toHaveBeenCalledWith({
-      engine: 'codex', tmuxPane: '%41', runtimeHints: [{ backend: 'tmux', paneId: '%41' }], callerPid: undefined,
+      engine: 'codex', tmuxPane: '%41', callerPid: undefined,
+      runtimeHints: [
+        { backend: 'tmux', paneId: '%41' },
+        { backend: 'herdr', paneId: 'w1:p1', sessionName: 'default', socketPath: '/tmp/herdr.sock' },
+      ],
       onWait: expect.any(Function),
     })
   })
@@ -213,21 +219,19 @@ describe('process-owned hook server', () => {
     } finally { log.mockRestore() }
   })
 
-  it('ignores a hook whose only terminal is a Herdr pane', async () => {
+  it('resolves a hook whose only terminal is a Herdr pane', async () => {
     const resolveHookAgent = vi.fn(async () => null)
     const { base, headers } = await start({ resolveHookAgent })
+    const hint = { backend: 'herdr', paneId: 'w1:p1', sessionName: 'default' }
     const response = await fetch(`${base}/api/hook/session-start`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        engine: 'claude',
-        sessionId: 'session-1',
-        runtimeHints: [{ backend: 'herdr', paneId: 'w1:p1', sessionName: 'default' }],
-      }),
+      body: JSON.stringify({ engine: 'claude', sessionId: 'session-1', runtimeHints: [hint] }),
     })
 
-    expect(await response.json()).toEqual({ ignored: true, reason: 'not_in_terminal' })
-    expect(resolveHookAgent).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ignored: true, reason: 'no_matching_engine_process' })
+    expect(resolveHookAgent).toHaveBeenCalledWith(expect.objectContaining({ runtimeHints: [hint], tmuxPane: undefined }))
   })
 
   it('rejects hooks outside configured terminal contexts before attempting process resolution', async () => {
