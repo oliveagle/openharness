@@ -27,7 +27,21 @@ const C = await import(pathToFileURL(join(repo, 'cli/src/lib/e2ee/core.ts')))
 const BACKEND = process.env.HARNESS_LOCAL_BACKEND || 'http://10.126.126.10:8085'
 const MACHINE_ID = process.env.HARNESS_LOCAL_MACHINE_ID || 'dfb203716baf7e104757968e3b7bedd8'
 const WANTED_AGENT = process.argv[2] || ''
-const PAIR_CODE = process.argv[3] || 'FAKEPHONE1'
+// The pair code is the CPace password, so it has to be the one the QR carries: a made-up default
+// pairs against nothing and reports CODE_MISMATCH, which reads like a broken deployment. With no
+// argument we take the QR the page is showing right now — its pair code and its handoff code.
+const PAIR_PAGE = process.env.HARNESS_PAIR_PAGE || `http://${new URL(BACKEND).hostname}:8089`
+let PAIR_CODE = process.argv[3] || ''
+let qrHandoff = process.env.QR_HANDOFF || ''
+if (!PAIR_CODE) {
+  const shown = await fetch(`${PAIR_PAGE}/code`).then(r => r.text()).catch(() => '')
+  const qr = shown.trim() ? new URL(shown.trim()) : null
+  const fields = new URLSearchParams(qr?.hash.slice(1) ?? '')
+  PAIR_CODE = fields.get('c') ?? ''
+  if (!qrHandoff) qrHandoff = fields.get('h') ?? ''
+  if (!PAIR_CODE) fail(`the pair page ${PAIR_PAGE}/code is not showing a QR`)
+  console.log(`· took the QR on screen (pair code ${PAIR_CODE})`)
+}
 const HARNESS_BIN = process.env.HARNESS_BIN || `${process.env.HOME}/.local/bin/harness-local`
 
 const wsUrl = `${BACKEND.replace(/^http/, 'ws')}/api/web-ws?autonomousEnv=prod&client=mobile`
@@ -35,7 +49,7 @@ const fail = (m) => { console.error(`✗ ${m}`); process.exit(1) }
 
 // ── the phone's sign-in: the QR's handoff code, redeemed for a token ───────────────────────────────
 async function phoneToken() {
-  let code = process.env.QR_HANDOFF || ''
+  let code = qrHandoff
   if (!code) {
     const session = JSON.parse(readFileSync(`${process.env.HOME}/.harness/auth/session.json`, 'utf8'))
     const handoff = await fetch(`${BACKEND}/api/auth/handoff`, {
