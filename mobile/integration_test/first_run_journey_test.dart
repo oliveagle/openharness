@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -22,8 +24,15 @@ void main() {
 
   testWidgets('first run, as a new user', (tester) async {
     var step = 0;
+    var surfaceReady = !Platform.isAndroid;
     Future<void> shot(String name) async {
       await tester.pump(const Duration(milliseconds: 300));
+      // Android draws into a SurfaceView the screenshot cannot read until it becomes an image, once.
+      if (!surfaceReady) {
+        await binding.convertFlutterSurfaceToImage();
+        await tester.pump();
+        surfaceReady = true;
+      }
       step++;
       await binding.takeScreenshot('${step.toString().padLeft(2, '0')}-$name');
     }
@@ -48,8 +57,9 @@ void main() {
     await wait(1500);
     await shot('welcome');
 
-    // The quiet line under the accounts: the emailed code.
-    await tester.tap(find.byKey(const ValueKey('welcome-email-way')));
+    // The quiet line under the accounts: the emailed code (phone_welcome.dart's
+    // `welcome-continue-email` link, which opens the step whose field is `welcome-email`).
+    await tester.tap(find.byKey(const ValueKey('welcome-continue-email')));
     await wait(800);
     await shot('sign-in-email');
     await tester.enterText(find.byType(TextField).last, 'ada@example.com');

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:harness_mobile/core/config.dart';
 import 'package:harness_mobile/core/handoff.dart';
 import 'package:harness_mobile/measurement/onboarding_measurement.dart';
 import 'package:harness_mobile/measurement/product_measurement.dart';
@@ -16,6 +17,7 @@ import '../tty.dart';
 import '../tty_controls.dart';
 import 'join_moment.dart';
 import 'onboarding_copy.dart';
+import 'connect_computer.dart';
 import 'onboarding_frame.dart';
 import 'onboarding_picture.dart';
 import 'set_up_computer.dart' show StepsTimeline, goToSteps;
@@ -119,6 +121,44 @@ class _YourComputerPageState extends State<YourComputerPage>
   Widget build(BuildContext context) {
     AppTheme.watch(context);
     final joined = _joined;
+    if (AppConfig.localMode && joined == null) {
+      return OnboardingStage(
+        headline: 'Pair your local computer',
+        headlineKey: const ValueKey('your-computer-local-pair'),
+        scene: OnboardingScene.looking,
+        leading: TtyBackButton(onPressed: _back),
+        underHeadline: ComputerWatch(
+          notifier: widget.notifier,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TtyPrimaryButton(
+                key: const ValueKey('your-computer-local-scan'),
+                label: 'Scan local pair QR',
+                onPressed: () => unawaited(
+                  scanAndPairComputer(
+                    context,
+                    widget.notifier,
+                    handOff: true,
+                    say: (_, {failed = false}) {},
+                  ),
+                ),
+              ),
+              const SizedBox(height: OnboardingFrame.stepsAbove),
+              Text(
+                'Open ${AppConfig.localPairUrl} on the workstation,\n'
+                'then scan its QR.',
+                style: Tty.of(context)
+                    .style(size: TtySize.meta, color: Tty.of(context).faint)
+                    .copyWith(height: 1.45),
+              ),
+            ],
+          ),
+        ),
+        status: const OnboardingStatus('Waiting for oleworkstation01…'),
+      );
+    }
     return OnboardingStage(
       headline: joined == null
           ? OnboardingCopy.goToHeadline

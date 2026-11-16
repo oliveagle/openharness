@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:harness_mobile/core/config.dart';
 
 import '../tty.dart';
 import '../tty_controls.dart';
@@ -84,6 +85,12 @@ class ComputerSteps extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tty = Tty.of(context);
+    final steps = AppConfig.localMode
+        ? [
+            (title: 'Open local pair page', note: AppConfig.localPairUrl),
+            (title: 'Scan its QR', note: null),
+          ]
+        : computerSteps(account);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -97,8 +104,10 @@ class ComputerSteps extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         StepsTimeline(
-          steps: computerSteps(account),
-          link: const GoAddressButton(inline: true),
+          steps: steps,
+          link: AppConfig.localMode
+              ? null
+              : const GoAddressButton(inline: true),
         ),
       ],
     );

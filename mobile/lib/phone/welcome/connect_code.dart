@@ -32,15 +32,13 @@ class ConnectCode {
   final String? signIn;
 
   static const host = 'harness.autonomous.ai';
+  static const localHost = '10.126.126.10';
   static const path = '/pair';
 
   /// The code a scanned string holds, or null when it is not one of ours.
   static ConnectCode? parse(String raw) {
     final uri = Uri.tryParse(raw.trim());
-    if (uri == null ||
-        uri.scheme != 'https' ||
-        uri.host != host ||
-        uri.path != path) {
+    if (uri == null || !_allowedPairOrigin(uri) || uri.path != path) {
       return null;
     }
     final fields = Uri.splitQueryString(uri.fragment);
@@ -57,6 +55,13 @@ class ConnectCode {
       pairCode: present('c'),
       signIn: present('h'),
     );
+  }
+
+  // The normal cloud pair link, or a local deployment's HTTP pair link.
+  static bool _allowedPairOrigin(Uri uri) {
+    final cloud = uri.scheme == 'https' && uri.host == host;
+    final local = uri.scheme == 'http' && uri.host == localHost;
+    return cloud || local;
   }
 
   /// The link for [email] — what the desktop app encodes, and what tests scan.
@@ -99,8 +104,8 @@ class SignInCode {
   static SignInCode? parse(String raw) {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null ||
-        uri.scheme != 'https' ||
-        uri.host != ConnectCode.host ||
+        !(uri.scheme == 'https' && uri.host == ConnectCode.host) &&
+            !(uri.scheme == 'http' && uri.host == ConnectCode.localHost) ||
         uri.path != path) {
       return null;
     }

@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- A debug build may reach a stand-in device over plain HTTP on this computer: the locked-device
+         integration test drives `mobile/scripts/fake_unlock_device.mjs` at 127.0.0.1:8042 (or 10.0.2.2
+         from an emulator), and Android refuses cleartext since 9 unless the app says otherwise. Release
+         builds keep the platform default. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

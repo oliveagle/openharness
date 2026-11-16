@@ -1,3 +1,5 @@
+import 'package:harness_mobile/core/config.dart';
+
 /// Every word of the phone's onboarding, in one place — the "Every word" table of
 /// `docs/research/2026-10-11-phone-onboarding` (agreed with the owner, 2026-10-12).
 ///
@@ -57,12 +59,18 @@ abstract final class OnboardingCopy {
   static const goToHeadline = 'On your computer, go to';
 
   /// ② The address, as written on the button that sends it: short enough to type off the phone.
-  static const goAddress = 'autonomous.ai/go';
+  static const cloudGoAddress = 'autonomous.ai/go';
+
+  /// The local pair host is the address to type in a local deployment; cloud keeps the download URL.
+  static String get goAddress =>
+      AppConfig.localMode ? AppConfig.localPairHost : cloudGoAddress;
 
   /// ② The address the button sends — the download for whatever computer opens it. The main site
   /// sends `/go` on to Harness's download page (`harness.autonomous.ai/desktop`), which picks the
   /// file for the computer that opens it.
-  static const goUrl = 'https://autonomous.ai/go';
+  static const cloudGoUrl = 'https://autonomous.ai/go';
+  static String get goUrl =>
+      AppConfig.localMode ? AppConfig.localPairUrl : cloudGoUrl;
 
   /// ② Under the picture, while the laptop breathes.
   static const looking = 'Looking for your computer';

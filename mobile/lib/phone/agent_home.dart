@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import 'package:harness_mobile/demo/sample_mode.dart';
+import 'package:harness_mobile/core/config.dart';
 import 'package:harness_mobile/logging/startup_trace.dart';
 import 'package:harness_mobile/logging/typing_trace.dart';
 import 'package:harness_mobile/measurement/onboarding_measurement.dart';
@@ -24,12 +25,14 @@ import 'phone_navigation.dart' show phoneRoute;
 import 'settings_page.dart' show PhoneSettingsButton;
 import 'tty_controls.dart';
 import 'tty.dart';
+import 'welcome/connect_computer.dart';
 import 'welcome/join_moment.dart';
 import 'welcome/onboarding_copy.dart';
 import 'welcome/onboarding_frame.dart';
 import 'welcome/onboarding_picture.dart';
 import 'welcome/pairing_with_code.dart';
 import 'welcome/pick_up_page.dart';
+import 'welcome/set_up_computer.dart' show StepsTimeline;
 import 'welcome/your_computer.dart';
 
 import 'phone_header.dart';
@@ -1122,6 +1125,19 @@ class _AgentHomeState extends State<AgentHome>
   /// and this screen moves on; with one of the person's other Google accounts, and it never does.
   Widget _goToYourComputer() {
     final notifier = widget.notifier;
+    if (AppConfig.localMode) {
+      return OnboardingStage(
+        headline: 'Pair your local computer',
+        headlineKey: const ValueKey('home-local-pair'),
+        scene: OnboardingScene.looking,
+        underHeadline: ComputerWatch(
+          notifier: notifier,
+          child: _LocalPairComputer(notifier: notifier),
+        ),
+        status: const OnboardingStatus('Waiting for oleworkstation01…'),
+        trailing: PhoneSettingsButton(notifier: notifier),
+      );
+    }
     if (_onboarding) {
       _awaitedComputer = true;
       notifier.onboardingMeasurement.start(ProductFlow.computerWait);
@@ -1524,6 +1540,91 @@ class _AgentHomeState extends State<AgentHome>
     // to move the screen again a second later. See [_awaitingMachine].
     _awaitingMachine = null;
     _requestedAgent = null;
+  }
+}
+
+/// The local deployment's replacement for the cloud download page: the phone is
+/// already signed in, so the only missing half is the machine. Scan its one-time
+/// pairing QR and hand the code to the home screen; the machine joining takes
+/// this page away and starts the E2EE pairing.
+class _LocalPairComputer extends StatefulWidget {
+  const _LocalPairComputer({required this.notifier});
+
+  final AppNotifier notifier;
+
+  @override
+  State<_LocalPairComputer> createState() => _LocalPairComputerState();
+}
+
+class _LocalPairComputerState extends State<_LocalPairComputer> {
+  String? _message;
+  bool _failed = false;
+
+  Future<void> _scan() async {
+    if (!mounted) return;
+    setState(() {
+      _message = null;
+      _failed = false;
+    });
+    await scanAndPairComputer(
+      context,
+      widget.notifier,
+      handOff: true,
+      say: (message, {failed = false}) {
+        if (!mounted) return;
+        setState(() {
+          _message = message;
+          _failed = failed;
+        });
+      },
+      steps: StepsTimeline(
+        steps: [
+          (
+            title: 'Open the workstation QR',
+            note: 'Visit ${AppConfig.localPairUrl}',
+          ),
+          (
+            title: 'Scan the pair code',
+            note: 'The code refreshes every minute.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tty = Tty.of(context);
+    final message = _message;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TtyPrimaryButton(
+          key: const ValueKey('home-local-scan'),
+          label: 'Scan local pair QR',
+          onPressed: _scan,
+        ),
+        const SizedBox(height: OnboardingFrame.stepsAbove),
+        Text(
+          'This phone is signed in to the local deployment.\n'
+          'Open ${AppConfig.localPairUrl} on the workstation,\n'
+          'then scan its QR.',
+          style: tty
+              .style(size: TtySize.meta, color: tty.faint)
+              .copyWith(height: 1.45),
+        ),
+        if (message != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            message,
+            style: tty
+                .style(size: TtySize.meta, color: _failed ? tty.red : tty.green)
+                .copyWith(height: 1.45),
+          ),
+        ],
+      ],
+    );
   }
 }
 

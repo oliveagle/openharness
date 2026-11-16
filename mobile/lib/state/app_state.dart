@@ -535,6 +535,47 @@ class AppNotifier extends ChangeNotifier {
     ),
   );
 
+  /// The agent's native transcript, for a phone conversation view.
+  ///
+  /// Terminal panes and native chat are two renderings of the same agent. A Herdr pane can lack a
+  /// live terminal byte stream, but its conversation is still authoritative on the daemon; reading
+  /// `session_get` keeps the phone from waiting on terminal keyframes that backend cannot produce.
+  Future<Map<String, dynamic>> conversationHistoryForAgent(
+    String machineId,
+    String agentId, {
+    int limit = 60,
+    String? before,
+  }) async {
+    final agent = stateOf(machineId)?.agents
+        .where((candidate) => candidate.id == agentId)
+        .firstOrNull;
+    // The daemon's registry looks a conversation up by its session id OR by the agent that holds
+    // it, so an agent without a session id (an older machine's list) can still be asked for. Only a
+    // machine that knows neither is a machine with nothing to read.
+    final sessionId = (agent?.sessionId?.isNotEmpty ?? false)
+        ? agent!.sessionId
+        : agentId;
+    return _conn(machineId).request(
+      'session_get',
+      payload: {
+        'sessionId': sessionId,
+        'limit': limit,
+        if (before != null) 'before': before,
+      },
+      timeout: const Duration(seconds: 8),
+    );
+  }
+
+  /// Bounded recent-turn summaries for agents that have not yet bound a native transcript.
+  Future<Map<String, dynamic>> recentConversationForAgent(
+    String machineId,
+    String agentId,
+  ) => _conn(machineId).request(
+    'agent_recent',
+    payload: {'agentId': agentId, 'n': 8},
+    timeout: const Duration(seconds: 5),
+  );
+
   /// What a finished turn or a question is worth — a tap, an unread mark, a
   /// system notice — decided by the dial's rules (`notify/`).
   final AgentAnnouncer agentNotices;

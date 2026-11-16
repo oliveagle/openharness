@@ -13,7 +13,7 @@ class ConfigStore {
   static const _legacySkippedDesktopUpdateVersionKey =
       'skipped_desktop_update_version';
   static const _legacyEnvironmentSetupVersionKey = 'environment_setup_version';
-  static const String defaultBaseUrl = 'https://harness-api.autonomous.ai';
+  static const String defaultBaseUrl = AppConfig.apiBaseUrlOverride;
 
   ConfigStore({LocalKeyValueStore? storage})
     : _storage = storage ?? HarnessFileStore.shared;

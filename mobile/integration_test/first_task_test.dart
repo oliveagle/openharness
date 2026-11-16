@@ -288,11 +288,10 @@ void main() {
         if (m.$1 == 'message') (m.$2 as Map)['content'],
     ];
     final send = find.byKey(FirstSessionSuggestion.sendKey);
-    bool sendEnabled() =>
-        tester
-            .widget<FirstSessionSuggestion>(find.byType(FirstSessionSuggestion))
-            .onSend !=
-        null;
+    bool sendEnabled() => tester
+        .widget<FirstSessionSuggestion>(find.byType(FirstSessionSuggestion))
+        .onSend !=
+    null;
 
     // Send is disabled while the session does not take input (here resyncing), and wakes with it.
     final waiting = await openRealPage(status: TerminalSessionStatus.resyncing);
@@ -303,7 +302,14 @@ void main() {
     expect(messages(waiting.sent), isEmpty);
     waiting.session.status = TerminalSessionStatus.controlling;
     waiting.session.notifyListeners();
-    await wait(300);
+    // The page redraws when the session takes input: wait for the frame that carries the enabled
+    // Send (the capsule is already on screen from the disabled state, so its finder alone waits for
+    // nothing).
+    await waitFor(
+      find.byWidgetPredicate(
+        (w) => w is FirstSessionSuggestion && w.onSend != null,
+      ),
+    );
     expect(sendEnabled(), isTrue);
     await shot('send-enabled-app-page');
 
@@ -320,23 +326,40 @@ void main() {
     await shot('suggestion-gone-app-page');
     await closeRealPage(waiting.voice, waiting.app);
 
-    // The mic is the other way in: the real controller and mic button, an injected transcript.
+    // The mic is the other way in. The first session's takes PRETEND (owner, 2026-10-23,
+    // VoiceInputController.startListening): while the onboarding line is unspent, speaking there is
+    // heard as the task in the prompt — whatever was said — so the onboarding never stops on a
+    // microphone permission. The injected transcript waits for the take AFTER that one, which is an
+    // ordinary recording.
     final spoken = await openRealPage();
     await shot('voice-suggestion-app-page');
-    spoken.transcriber.replies.add('add a login page');
     await tester.tap(find.byType(VoiceMicButton));
     await wait(600);
     expect(spoken.voice.status, VoiceInputStatus.listening);
+    expect(spoken.voice.pretending, isTrue);
     // The take is on: the suggestion and its line wait, nothing is left standing over an empty row.
     expect(send, findsNothing);
     expect(find.text(OnboardingCopy.micSayWhat), findsNothing);
     await shot('voice-listening-app-page');
     await tester.tap(find.byType(VoiceMicButton));
     await wait(1500);
-    expect(messages(spoken.sent), ['add a login page']);
+    // Heard as the prompt's task, and the line is spent with it.
+    expect(messages(spoken.sent), [firstTaskIdeas.first]);
     expect(spoken.app.firstSessionLine, isNull);
     expect(send, findsNothing);
     await shot('voice-sent-suggestion-gone-app-page');
+
+    // The line is spent, so the next take is an ordinary recording: the real controller, the real
+    // mic button and the injected transcript — what the mic does everywhere else.
+    spoken.transcriber.replies.add('add a login page');
+    await tester.tap(find.byType(VoiceMicButton));
+    await wait(600);
+    expect(spoken.voice.status, VoiceInputStatus.listening);
+    expect(spoken.voice.pretending, isFalse);
+    await tester.tap(find.byType(VoiceMicButton));
+    await wait(1500);
+    expect(messages(spoken.sent), [firstTaskIdeas.first, 'add a login page']);
+    await shot('voice-transcript-sent-app-page');
     await closeRealPage(spoken.voice, spoken.app);
   });
 }

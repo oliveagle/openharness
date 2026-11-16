@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Local VPN/LAN deployments point the release app at http://10.126.126.10:8085.
+         Keep this in the release source set only; the cloud app must stay HTTPS-only. -->
+    <application android:usesCleartextTraffic="true"/>
+</manifest>

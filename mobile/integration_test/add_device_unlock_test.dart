@@ -1,4 +1,7 @@
+import 'dart:io' show Platform;
+
 import 'package:dio/dio.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -15,13 +18,28 @@ import 'package:harness_mobile/shared/theme/app_theme.dart' as grid;
 ///     python3 <stand-in device on 127.0.0.1:8042> os/root/usr/lib/harness-os/unlock/http &
 ///     flutter drive -d <simulator> --driver=test_driver/journey_driver.dart \
 ///       --target=integration_test/add_device_unlock_test.dart
+///
+/// On an Android emulator the same walk runs against the stand-in this repository ships, and the
+/// phone's own Wi-Fi join is answered here instead of by a hotspot (an emulator has none), so the
+/// password and the Wi-Fi steps are the only thing being driven:
+///
+///     node mobile/scripts/fake_unlock_device.mjs &
+///     adb reverse tcp:8042 tcp:8042      # the emulator's 127.0.0.1:8042 is this computer's
+///     flutter test -d emulator-5554 integration_test/add_device_unlock_test.dart
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('a locked device: its password, then its Wi-Fi', (tester) async {
     var step = 0;
+    var surfaceReady = !Platform.isAndroid;
     Future<void> shot(String name) async {
       await tester.pump(const Duration(milliseconds: 300));
+      // Android draws into a SurfaceView the screenshot cannot read until it becomes an image, once.
+      if (!surfaceReady) {
+        await binding.convertFlutterSurfaceToImage();
+        await tester.pump();
+        surfaceReady = true;
+      }
       step++;
       await binding.takeScreenshot('${step.toString().padLeft(2, '0')}-$name');
     }
@@ -32,6 +50,30 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       fail('never appeared: $finder');
+    }
+
+    // An emulator joins no Wi-Fi by itself and has no Harness-… hotspot to join: the page's own join is
+    // answered as if the phone had joined it, and everything after it goes to the stand-in device
+    // through Dio (127.0.0.1:8042, reversed to this computer).
+    if (Platform.isAndroid) {
+      const channel = MethodChannel('harness/setup_wifi');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        switch (call.method) {
+          case 'join':
+            return <Object?, Object?>{
+              'state': 'joined',
+              'address': '127.0.0.1',
+            };
+          case 'wifiOn':
+            return true;
+          case 'leave':
+            return true;
+        }
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
     }
 
     final runtime = SampleRuntime();

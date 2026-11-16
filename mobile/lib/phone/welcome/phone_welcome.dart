@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:harness_mobile/auth/sign_in_provider.dart';
+import 'package:harness_mobile/core/config.dart';
 import 'package:harness_mobile/shared/theme/app_theme.dart';
 import 'package:harness_mobile/state/app_state.dart';
 
@@ -100,6 +101,18 @@ class _PhoneWelcomeState extends State<PhoneWelcome> {
 
   String? _error;
 
+  /// A local build has exactly one way in: scan the workstation's local pair QR.
+  /// It opens the camera immediately, so the deployment never falls back to cloud login.
+  @override
+  void initState() {
+    super.initState();
+    if (AppConfig.localMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _step == _Step.hello) _go(_Step.scan);
+      });
+    }
+  }
+
   /// A line in the headline's place that is neither a failure nor a sign-out: what to do next.
   String? _notice;
 
@@ -159,7 +172,8 @@ class _PhoneWelcomeState extends State<PhoneWelcome> {
         // ⚠️ [AppNotifier.signInWithScan] does nothing while another sign-in is under way — an
         // account's page let go of on the way here — so that one is waited out first, or the scan
         // would be dropped without a word under a camera that reads one code only.
-        if (!await _signInFree()) throw StateError('Another sign-in is under way');
+        if (!await _signInFree())
+          throw StateError('Another sign-in is under way');
         if (!mounted || _step != _Step.scan) return;
         await notifier.signInWithScan(signIn);
         // In, or going in: the app swaps this screen for home. Still out and nothing under way is
@@ -362,23 +376,36 @@ class _PhoneWelcomeState extends State<PhoneWelcome> {
                 (null, null, final reason?) when !_reasonRead => _Said(reason),
                 _ => null,
               },
-              actions: _Accounts(
-                onProvider: signingIn
-                    ? null
-                    : (provider) => unawaited(_signInWith(provider)),
-                waitingOn: notifier.signInProvider,
-                entering: entering,
-                onCancel: notifier.cancelProviderSignIn,
-                // Either way in lets the message go, as the accounts do: back here, the headline.
-                onEmail: () {
-                  _reasonRead = true;
-                  _go(_Step.email);
-                },
-                onScan: () {
-                  _reasonRead = true;
-                  _go(_Step.scan);
-                },
-              ),
+              actions: AppConfig.localMode
+                  ? TtyPrimaryButton(
+                      key: const ValueKey('welcome-local-scan'),
+                      label: 'Scan local pair QR',
+                      busy: _signingInWithScan,
+                      busyLabel: 'Pairing…',
+                      onPressed: signingIn
+                          ? null
+                          : () {
+                              _reasonRead = true;
+                              _go(_Step.scan);
+                            },
+                    )
+                  : _Accounts(
+                      onProvider: signingIn
+                          ? null
+                          : (provider) => unawaited(_signInWith(provider)),
+                      waitingOn: notifier.signInProvider,
+                      entering: entering,
+                      onCancel: notifier.cancelProviderSignIn,
+                      // Either way in lets the message go, as the accounts do: back here, the headline.
+                      onEmail: () {
+                        _reasonRead = true;
+                        _go(_Step.email);
+                      },
+                      onScan: () {
+                        _reasonRead = true;
+                        _go(_Step.scan);
+                      },
+                    ),
             ),
             _Step.scan => ScanToConnectPage(
               camera: widget.scanCamera,
